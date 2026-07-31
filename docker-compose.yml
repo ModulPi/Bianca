@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    # 密钥等敏感项只从 .env 注入，勿在 environment 里用 ${VAR} 覆盖（空 shell 变量会清空 env_file）
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

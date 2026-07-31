@@ -1,6 +1,6 @@
 # Bianca — 系统设计文档
 
-> 版本：v0.3 | 日期：2026-07-31 | 基于 PRD v0.3
+> 版本：v0.4 | 日期：2026-07-31 | 基于 PRD v0.4
 
 ---
 
@@ -16,7 +16,8 @@ Bianca 是基于 LangGraph 的加密货币自动交易 Agent。PoC 阶段聚焦�
 | 2 | **风控不可绕过** | Risk Agent 是 Execute 唯一前置 |
 | 3 | **可配置自动执行** | `LLM_AUTO_EXECUTE` 环境变量 |
 | 4 | **状态可回溯** | LangGraph SqliteSaver |
-| 5 | **最简部署** | Docker 跑 API；Ollama 宿主机 |
+| 5 | **最简部署** | Docker 跑 API；LLM 默认 DeepSeek API |
+| 6 | **LLM 可切换** | `LLM_PROVIDER` 配置切换 deepseek / ollama |
 
 ---
 
@@ -28,7 +29,7 @@ Bianca 是基于 LangGraph 的加密货币自动交易 Agent。PoC 阶段聚焦�
 CLI/curl → FastAPI (127.0.0.1:8000)
          → Agent Runner (asyncio 定时循环, 默认 5min)
          → LangGraph StateGraph
-              Supervisor → Analysis(Ollama) → Risk(2 rules) → Execute(ccxt Demo)
+              Supervisor → Analysis(LLM) → Risk(2 rules) → Execute(ccxt Demo)
          → SQLite (trade_logs, decision_logs, risk_events)
          → 内存行情缓存
 ```
@@ -54,6 +55,7 @@ Bianca/
 │   │   ├── spot_demo.py        # ccxt Demo 现货
 │   │   └── market_stream.py
 │   ├── llm/
+│   │   ├── provider.py         # LLM 提供商抽象（deepseek / ollama）
 │   │   ├── analyzer.py
 │   │   └── prompts.py
 │   ├── risk/
@@ -87,11 +89,12 @@ class TradeState(TypedDict):
 | 模块 | 职责 |
 |------|------|
 | `runner.py` | 定时触发 LangGraph；控制启停 |
-| `graph/analysis_agent.py` | 调用 Ollama，解析 BUY/SELL/HOLD |
+| `graph/analysis_agent.py` | 调用 LLM 提供商，解析 BUY/SELL/HOLD |
 | `graph/risk_agent.py` | 单笔上限 + 日亏损检查 |
 | `graph/execute_agent.py` | ccxt Demo 现货市价单 |
 | `exchange/spot_demo.py` | Demo API 封装 |
-| `llm/analyzer.py` | Ollama HTTP 客户端 |
+| `llm/provider.py` | 根据 `LLM_PROVIDER` 路由至 DeepSeek 或 Ollama |
+| `llm/analyzer.py` | OpenAI 兼容 API 客户端（DeepSeek / Ollama 共用） |
 | `risk/rules.py` | MaxTradeAmountRule, DailyLossRule |
 
 ---
@@ -101,7 +104,7 @@ class TradeState(TypedDict):
 ```
 Base: http://127.0.0.1:8000/api/v1
 
-GET    /health                    # 健康检查 + Ollama 可达性
+GET    /health                    # 健康检查 + 当前 LLM 提供商可达性
 POST   /agent/start               # 启动 Agent 循环
 POST   /agent/stop                # 停止
 GET    /agent/status              # {running, last_tick, daily_pnl}
@@ -115,15 +118,45 @@ GET    /risk/events               # 风控事件
 
 ## 5. 配置（.env.example）
 
+### 5.1 LLM 提供商切换
+
+通过 `LLM_PROVIDER` 切换，**无需改代码**，重启 API 生效。
+
+**默认：DeepSeek API（PoC 推荐）**
+
+```bash
+LLM_PROVIDER=deepseek
+LLM_API_KEY=sk-your-deepseek-key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+LLM_AUTO_EXECUTE=true
+```
+
+**切换：本地 Ollama（后期）**
+
+```bash
+LLM_PROVIDER=ollama
+LLM_API_KEY=                    # Ollama 无需 Key，留空即可
+LLM_BASE_URL=http://host.docker.internal:11434
+LLM_MODEL=qwen2.5:7b
+LLM_AUTO_EXECUTE=true
+```
+
+> DeepSeek 与 Ollama 均通过 **OpenAI 兼容 API** 调用（`/v1/chat/completions`），`llm/provider.py` 统一封装。
+
+### 5.2 完整 .env.example
+
 ```bash
 # 币安 Demo 现货
 BINANCE_API_KEY=
 BINANCE_API_SECRET=
 BINANCE_DEMO_BASE_URL=https://demo-api.binance.com
 
-# LLM
-LLM_BASE_URL=http://host.docker.internal:11434
-LLM_MODEL=qwen2.5:7b
+# LLM（见 §5.1 切换说明）
+LLM_PROVIDER=deepseek
+LLM_API_KEY=
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
 LLM_AUTO_EXECUTE=true
 
 # 风控
@@ -161,7 +194,9 @@ services:
       - "host.docker.internal:host-gateway"
 ```
 
-**前置条件：** 宿主机已安装并运行 Ollama，且已 pull `qwen2.5:7b`。
+**前置条件（DeepSeek，默认）：** 在 `.env` 中配置有效的 `LLM_API_KEY`。
+
+**切换 Ollama 时：** 宿主机安装并运行 Ollama，且已 pull 对应模型；`docker-compose.yml` 保留 `extra_hosts` 以便容器访问宿主机。
 
 ---
 
@@ -188,7 +223,7 @@ services:
 | 层面 | PoC | MVP |
 |------|-----|-----|
 | 网络 | 仅 `127.0.0.1` 绑定 | + API Token |
-| API Key | `.env` 明文（本地） | AES-256 加密存储 |
+| API Key | `.env` 明文（本地，含 DeepSeek Key） | AES-256 加密存储 |
 | 日志 | API Key 脱敏 | 同 |
 | 风控 | 2 条硬规则 | 8 条 + 熔断 |
 
@@ -198,7 +233,7 @@ services:
 
 | 指标 | 告警条件 |
 |------|----------|
-| Ollama 可达性 | /health 检查失败 |
+| LLM 可达性 | /health 检查当前 LLM_PROVIDER 失败 |
 | Demo WS 连接 | 断连 > 60s |
 | 日亏损 | ≥ 限额 80% 时日志 WARN |
 | Agent 异常 | Runner 未捕获异常 → 日志 ERROR |

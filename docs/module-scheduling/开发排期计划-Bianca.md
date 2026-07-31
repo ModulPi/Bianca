@@ -47,9 +47,10 @@
 | # | 任务 | 工时 | 产出 |
 |---|------|------|------|
 | P2.1 | `llm/prompts.py` — 结构化输出 Prompt | 0.5d | Prompt 模板 |
-| P2.2 | `llm/analyzer.py` — 连接宿主机 Ollama | 1d | MarketAnalyzer |
-| P2.3 | `graph/analysis_agent.py` — 产出 BUY/SELL/HOLD | 1d | Analysis Agent |
-| P2.4 | `LLM_AUTO_EXECUTE` 开关逻辑 | 0.5d | 可配置执行 |
+| P2.2 | `llm/provider.py` — DeepSeek / Ollama 可切换封装 | 0.5d | LLM Provider |
+| P2.3 | `llm/analyzer.py` — OpenAI 兼容客户端 | 0.5d | MarketAnalyzer |
+| P2.4 | `graph/analysis_agent.py` — 产出 BUY/SELL/HOLD | 1d | Analysis Agent |
+| P2.5 | `LLM_AUTO_EXECUTE` 开关逻辑 | 0.5d | 可配置执行 |
 
 **产出：** **M1** — LLM 能产出结构化交易信号。
 

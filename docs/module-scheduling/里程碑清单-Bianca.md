@@ -8,7 +8,7 @@
 
 | 里程碑 | 名称 | 完成标准 | 预计日期* |
 |--------|------|----------|-----------|
-| **M0** | Demo 现货 API 连通 | 查余额、获取 BTCUSDT 行情、Ollama `/api/tags` 可达 | D+4 |
+| **M0** | Demo 现货 API 连通 | 查余额、获取 BTCUSDT 行情、DeepSeek API `/health` 可达 | D+4 |
 | **M1** | LLM 决策链路 | Analysis Agent 输出结构化 BUY/SELL/HOLD | D+7 |
 | **M2** | 风控 + 执行 | 2 条风控规则生效；Demo 现货市价单成功 | D+10 |
 | **M3** | 闭环验收 | 日志含 1 BUY + 1 SELL（filled）；Checkpointer 可回放 | D+12 |
@@ -32,7 +32,7 @@
 ## 验收检查表（PoC M3）
 
 - [ ] `docker compose up api` 成功，绑定 `127.0.0.1:8000`
-- [ ] Ollama 在宿主机运行，API 容器可访问
+- [ ] Ollama 在宿主机运行，API 容器可访问（`LLM_PROVIDER=ollama` 时）
 - [ ] `POST /api/v1/agent/start` 启动 Agent
 - [ ] `trade_logs` 表有 ≥1 BUY + ≥1 SELL，`status=filled`
 - [ ] 每条记录含 `decision_reason`（LLM 理由）和 `risk_decision`

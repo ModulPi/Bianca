@@ -1,6 +1,6 @@
 # Bianca — 架构设计文档 (C4 模型)
 
-> 版本：v0.3 | 日期：2026-07-31 | 基于 PRD v0.3
+> 版本：v0.4 | 日期：2026-07-31 | 基于 PRD v0.4
 
 ---
 
@@ -8,8 +8,8 @@
 
 ```
 ┌─────────────────┐     ┌───────────────────┐     ┌─────────────────┐
-│  开发者 (CLI)    │────▶│      Bianca       │◀────│ Ollama (宿主机)  │
-│  curl/localhost  │◀────│  LLM 自主交易 Agent │     │ localhost:11434 │
+│  开发者 (CLI)    │────▶│      Bianca       │◀────│ DeepSeek API（默认）│
+│  curl/localhost  │◀────│  LLM 自主交易 Agent │     │ 或 Ollama（可切换） │
 └─────────────────┘     └─────────┬─────────┘     └─────────────────┘
                                   │ HTTPS / WSS
                                   ▼
@@ -37,9 +37,8 @@
 │  │  └─ SQLite (bianca.db + checkpoints.db)     │   │
 │  └─────────────────────────────────────────────┘   │
 │                                                     │
-│  宿主机 (非容器):                                    │
-│  ├─ Ollama (qwen2.5:7b)                            │
-│  └─ 行情内存缓存                                     │
+│  宿主机 (切换 ollama 时需要):                        │
+│  └─ Ollama (qwen2.5:7b) @ localhost:11434           │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -59,7 +58,7 @@
            └───────┬───────┘
                    ▼
            ┌───────────────┐
-           │ Analysis Agent│ ← Ollama 产出 BUY/SELL/HOLD
+           │ Analysis Agent│ ← DeepSeek（默认）/ Ollama 产出 BUY/SELL/HOLD
            └───────┬───────┘
                    │
          ┌─────────┼─────────┐
@@ -93,14 +92,19 @@
 
 ### ADR-002: LLM 自主决策（PoC 核心）
 - **状态:** ✅ 已采纳 | **日期:** 2026-07-31
-- **决策:** PoC 由 Analysis Agent（Ollama）自主产出 BUY/SELL/HOLD
+- **决策:** PoC 由 Analysis Agent 自主产出 BUY/SELL/HOLD（默认 DeepSeek，可切换 Ollama）
 - **理由:** PoC 目标是验证 AI Agent 自主交易闭环，非规则策略
 - **约束:** `LLM_AUTO_EXECUTE=false` 时只记录信号
 
-### ADR-003: 宿主机 Ollama + Docker API
+### ADR-003: LLM 提供商可配置（DeepSeek 默认，Ollama 可切换）
 - **状态:** ✅ 已采纳 | **日期:** 2026-07-31
-- **决策:** Ollama 跑宿主机，Docker 只跑 API，通过 `host.docker.internal:11434` 连接
-- **理由:** PoC 最轻部署；模型不占容器资源
+- **决策:** PoC 默认 DeepSeek API；通过 `LLM_PROVIDER=deepseek|ollama` 切换，OpenAI 兼容接口统一封装
+- **理由:**
+  - PoC 快速验证，无需本地 GPU/大模型部署
+  - 后期切 Ollama 仅改 `.env`，保护隐私、降本
+  - DeepSeek 与 Ollama 均支持 OpenAI 兼容 `/v1/chat/completions`
+- **代价:** PoC 阶段行情/决策数据发送至 DeepSeek 云端
+- **替代方案:** 仅 Ollama（部署门槛高）；多 Provider 硬编码（切换成本高）
 
 ### ADR-004: SQLite（PoC）→ PostgreSQL（MVP）
 - **状态:** ✅ 已采纳 | **日期:** 2026-07-31
@@ -123,12 +127,12 @@
 ## 5. PoC 时序：LLM 自主交易
 
 ```
-Runner      Supervisor    Analysis     Ollama      Risk       Execute     Demo API    SQLite
+Runner      Supervisor    Analysis     LLM API     Risk       Execute     Demo API    SQLite
   │              │            │           │          │           │           │          │
   │ tick         │            │           │          │           │           │          │
   │─────────────▶│            │           │          │           │           │          │
   │              │───────────▶│           │          │           │           │          │
-  │              │            │ analyze   │          │           │           │          │
+  │              │            │ chat      │          │           │           │          │
   │              │            │──────────▶│          │           │           │          │
   │              │            │◀──────────│          │           │           │          │
   │              │            │ BUY 0.001 BTC        │           │           │          │

@@ -23,11 +23,12 @@
 
 ### US-P02：LLM 自主产出交易信号
 > **作为** Agent 引擎  
-> **我想要** 调用宿主机 Ollama 分析行情并产出 BUY/SELL/HOLD  
+> **我想要** 调用 DeepSeek API（或切换后的 Ollama）分析行情并产出 BUY/SELL/HOLD  
 > **以便** 由 AI 自主决定买卖时机  
 
 **验收标准：**
-- [ ] Analysis Agent 接收多时间框架 K 线数据
+- [ ] 默认使用 DeepSeek API（`LLM_PROVIDER=deepseek`）
+- [ ] 修改 `.env` 为 `LLM_PROVIDER=ollama` 后可切换至本地模型，无需改代码
 - [ ] 输出结构化信号：`{action, symbol, amount, confidence, reason}`
 - [ ] HOLD 时不触发下单
 - [ ] 单次推理超时可降级为 HOLD 并记录

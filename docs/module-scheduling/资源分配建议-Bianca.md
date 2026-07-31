@@ -10,9 +10,9 @@
 |------|------|
 | **人力** | 1 名全栈开发者，100% 投入 |
 | **工时** | 12 工作日（建议预留 3 天缓冲 → 15 天） |
-| **硬件** | 开发机 16GB+ RAM（Ollama qwen2.5:7b）；可选 GPU |
-| **软件** | Docker Desktop、Ollama（宿主机）、Python 3.11+ |
-| **外部服务** | 币安 Demo 现货 API Key（免费） |
+| **硬件** | 开发机 8GB+ RAM（DeepSeek 云端推理，无需 GPU） |
+| **软件** | Docker Desktop、Python 3.11+；切换 Ollama 时需本地安装 Ollama |
+| **外部服务** | 币安 Demo 现货 API Key + DeepSeek API Key |
 
 ### 时间分配（PoC）
 

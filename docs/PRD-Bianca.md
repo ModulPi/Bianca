@@ -1,6 +1,6 @@
 # Bianca — 产品需求文档（PRD）
 
-> 版本：v0.3 | 日期：2026-07-31 | 阶段：概念验证（PoC） | 状态：需求已确认 ✅
+> 版本：v0.4 | 日期：2026-07-31 | 阶段：概念验证（PoC） | 状态：需求已确认 ✅
 
 ---
 
@@ -30,7 +30,7 @@ Bianca 是一个**面向 C 端用户的加密货币自动交易 Agent 平台**�
 - **可配置执行模式：** 用户可选择 AI 建议「自动执行」或「仅记录不执行」（PoC 默认自动执行）
 - **风险可控：** 内置最小风控，PoC 验证后再扩展
 - **透明可审计：** 每笔交易的决策过程可回溯
-- **本地 LLM 优先：** 默认宿主机 Ollama，保护隐私、零 API 费用
+- **LLM 可切换：** PoC 默认 DeepSeek API；后期通过配置切换至本地 Ollama
 
 ---
 
@@ -44,7 +44,7 @@ Bianca 是一个**面向 C 端用户的加密货币自动交易 Agent 平台**�
 | **决策模型** | **LLM 自主：** Analysis Agent 分析行情 → 产出 BUY/SELL/HOLD → 风控 → 执行 |
 | **Agent 编排** | LangGraph Supervisor 模式 |
 | **闭环目标** | Agent 自主完成至少 **1 次买入 + 1 次卖出** |
-| **LLM** | 宿主机 Ollama（`localhost:11434`），支持配置「AI 建议自动执行」 |
+| **LLM** | 默认 **DeepSeek API**；通过 `LLM_PROVIDER` 配置切换至 Ollama；支持「AI 建议自动执行」 |
 | **执行模式** | 仅 **全自动**（半自动放 MVP） |
 | **风控** | **最小 2 条：** 单笔金额上限 + 日亏损熔断 |
 | **基础设施** | SQLite + 内存/文件缓存；Docker 仅跑 API 服务 |
@@ -80,6 +80,7 @@ Bianca 是一个**面向 C 端用户的加密货币自动交易 Agent 平台**�
 |------|------|
 | **币安 Demo 现货对接** | REST 下单/查余额 + WebSocket 行情（ccxt 或 python-binance） |
 | **LLM 自主决策 Agent** | LangGraph：Supervisor → Analysis(LLM) → Risk → Execute |
+| **LLM 提供商切换** | `LLM_PROVIDER=deepseek \| ollama`，改配置即可切换，无需改代码 |
 | **AI 自动执行配置** | 环境变量 `LLM_AUTO_EXECUTE=true/false` 控制是否自动下单 |
 | **最小风控** | 单笔最大交易额 + 日亏损熔断 |
 | **交易日志** | 记录：时间、方向、价格、数量、LLM 决策理由、风控结果 |
@@ -109,7 +110,7 @@ Bianca 是一个**面向 C 端用户的加密货币自动交易 Agent 平台**�
 
 ```
 启动 Agent → 采集 Demo 现货行情（WebSocket/REST）
-→ Analysis Agent（Ollama）分析 → 输出 BUY / SELL / HOLD + 理由 + 置信度
+→ Analysis Agent（DeepSeek / Ollama，按 LLM_PROVIDER）分析 → 输出 BUY / SELL / HOLD + 理由 + 置信度
 → 若 HOLD：等待下一周期
 → 若 BUY/SELL 且 LLM_AUTO_EXECUTE=true：
     → Risk Agent（单笔上限 + 日亏损检查）
@@ -144,16 +145,16 @@ LLM 产出交易信号
 │  PoC：CLI / curl → FastAPI (127.0.0.1)  │
 ├─────────────────────────────────────────┤
 │  LangGraph Supervisor                   │
-│    → Analysis Agent (Ollama @ 宿主机)    │
+│    → Analysis Agent (DeepSeek API 默认可切换 Ollama) │
 │    → Risk Agent (2 条规则)               │
 │    → Execute Agent (Demo 现货 ccxt)      │
 ├─────────────────────────────────────────┤
 │  SQLite + LangGraph SqliteSaver         │
 │  内存/文件行情缓存                        │
 └─────────────────────────────────────────┘
-         │ REST/WSS                │ HTTP
+         │ REST/WSS                │ HTTPS / HTTP
          ▼                         ▼
-   币安 Demo 现货              Ollama (localhost)
+   币安 Demo 现货         DeepSeek API（默认）或 Ollama（切换）
 ```
 
 **MVP 扩展：** + React 前端 + PostgreSQL/TimescaleDB + Redis + 策略模板 + 完整风控。
@@ -167,7 +168,7 @@ LLM 产出交易信号
 | 安全性 | localhost 绑定；API Key 从 `.env` 读取 | AES-256 加密存储；API Token 鉴权 |
 | 可靠性 | Agent 7×24；WS 自动重连 | + Telegram 告警 |
 | 性能 | 行情延迟 < 2s；LLM 推理 2–15s 可接受 | 前端刷新 < 1s |
-| 部署 | Docker 跑 API；Ollama 宿主机 | Docker Compose 全套 |
+| 部署 | Docker 跑 API；LLM 默认 DeepSeek 云端 | Docker Compose 全套；可切本地 Ollama |
 
 ---
 
@@ -175,7 +176,7 @@ LLM 产出交易信号
 
 | 里程碑 | 目标 | 产出 |
 |--------|------|------|
-| **M0** | 环境搭建 | Demo 现货 API 连通；Ollama 可达；Docker API 启动 |
+| **M0** | 环境搭建 | Demo 现货 API 连通；DeepSeek API 可达；Docker API 启动 |
 | **M1** | LLM 决策链路 | Analysis Agent 能输出 BUY/SELL/HOLD |
 | **M2** | 风控 + 执行 | 最小风控生效；Demo 现货能下单 |
 | **M3** | 闭环验收 | Agent 自主完成 1 买 + 1 卖；日志可追溯 |
@@ -194,7 +195,7 @@ M0 → M1 → M2 → M3
 | D2 | PoC 目标 | Demo 现货 LLM 自主完成 1 买 1 卖闭环 | 2026-07-31 |
 | D3 | 决策模型 | LLM 自主决策（非规则策略模板） | 2026-07-31 |
 | D4 | Agent 编排 | LangGraph Supervisor（PoC 即用） | 2026-07-31 |
-| D5 | LLM 部署 | 宿主机 Ollama，Docker 只跑 API | 2026-07-31 |
+| D5 | LLM 提供商 | PoC 默认 DeepSeek API；`LLM_PROVIDER` 配置切换 Ollama | 2026-07-31 |
 | D6 | LLM 执行 | 用户可配置 AI 建议自动执行 | 2026-07-31 |
 | D7 | PoC 基础设施 | SQLite 轻量，无 PG/Redis/TimescaleDB | 2026-07-31 |
 | D8 | PoC 界面 | 无前端；MVP 做 React 控制台 | 2026-07-31 |

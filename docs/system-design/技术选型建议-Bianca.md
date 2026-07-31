@@ -1,6 +1,6 @@
 # Bianca — 技术选型建议
 
-> 版本：v0.3 | 日期：2026-07-31
+> 版本：v0.4 | 日期：2026-07-31
 
 ---
 
@@ -13,68 +13,75 @@
 │ Agent 编排    │ 交易所        │ 基础设施           │
 │ LangGraph    │ ccxt (Demo)  │ SQLite            │
 │ LangChain    │ python-binance│ 内存行情缓存       │
-│ Ollama(宿主机)│ (WS 行情)    │ Docker (仅 API)   │
+│              │ (WS 行情)    │ Docker (仅 API)   │
 ├──────────────┼──────────────┼───────────────────┤
-│ Web 框架      │ LLM          │ 配置              │
-│ FastAPI      │ qwen2.5:7b   │ pydantic-settings │
-│ Uvicorn      │              │                   │
+│ LLM (默认)   │ LLM (可切换)  │ 配置              │
+│ DeepSeek API │ Ollama 本地   │ pydantic-settings │
+│ OpenAI 兼容  │ OpenAI 兼容  │ LLM_PROVIDER      │
 └──────────────┴──────────────┴───────────────────┘
 ```
 
-## 2. MVP 增量技术栈
+## 2. LLM 提供商选型
+
+| 提供商 | 阶段 | 接入方式 | 切换配置 |
+|--------|------|----------|----------|
+| **DeepSeek** | PoC 默认 | HTTPS OpenAI 兼容 API | `LLM_PROVIDER=deepseek` |
+| **Ollama** | PoC 后期 / MVP | 宿主机 HTTP OpenAI 兼容 | `LLM_PROVIDER=ollama` |
+
+**统一封装：** `llm/provider.py` 根据 `LLM_PROVIDER` 构造客户端，Analysis Agent 无感知切换。
+
+```bash
+# DeepSeek（默认）
+LLM_PROVIDER=deepseek
+LLM_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+
+# 切换 Ollama
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://host.docker.internal:11434
+LLM_MODEL=qwen2.5:7b
+```
+
+## 3. MVP 增量技术栈
 
 | 层 | 新增 |
 |----|------|
 | 前端 | React 18 + TypeScript + Vite + Tailwind |
 | 数据库 | PostgreSQL 16 + TimescaleDB 2.x |
 | 缓存 | Redis 7 |
-| 图表 | Recharts + lightweight-charts |
-| 状态 | Zustand |
 | 通知 | Telegram Bot API |
-| 部署 | Docker Compose 全套 |
 
----
-
-## 3. 关键选型理由（PoC）
+## 4. 关键选型理由（PoC）
 
 ### LangGraph
-- PoC 即用 Supervisor 模式编排 LLM → 风控 → 执行
+- Supervisor 模式编排 LLM → 风控 → 执行
 - SqliteSaver 满足决策审计
-- MVP 可扩展 Strategy Agent 节点
+
+### DeepSeek API（PoC 默认）
+- 开箱即用，无需本地 GPU
+- OpenAI 兼容，切换 Ollama 时代码复用
 
 ### ccxt (Demo 现货)
 - 统一 API，MVP 扩展合约时复用
-- `enableRateLimit: true` 内置限流
-
-### 宿主机 Ollama
-- Docker 只跑 API，最轻部署
-- 通过 `host.docker.internal` 连接
 
 ### SQLite
 - 零配置，PoC 单用户足够
-- MVP 迁移 PostgreSQL（Alembic 迁移脚本）
 
----
-
-## 4. 版本要求
+## 5. 版本要求
 
 | 组件 | PoC 版本 |
 |------|----------|
 | Python | ≥ 3.11 |
 | LangGraph | ≥ 0.2 |
+| openai (SDK) | ≥ 1.x（DeepSeek / Ollama 兼容调用） |
 | FastAPI | ≥ 0.110 |
 | ccxt | ≥ 4.x |
-| SQLAlchemy | ≥ 2.0 (async) |
-| Ollama | latest |
 
----
-
-## 5. 明确不选（PoC）
+## 6. 明确不选（PoC）
 
 | 组件 | 原因 |
 |------|------|
-| PostgreSQL/TimescaleDB | PoC 数据量小，SQLite 足够 |
-| Redis | 内存缓存即可 |
+| 强制 Ollama | PoC 先用 DeepSeek 快速验证；Ollama 通过配置切换 |
+| PostgreSQL/TimescaleDB | 数据量小，SQLite 足够 |
 | React 前端 | PoC 用 CLI/curl |
-| 策略模板引擎 | PoC 用 LLM 自主决策 |
-| Testnet | 统一用 Demo 现货，避免环境混用 |

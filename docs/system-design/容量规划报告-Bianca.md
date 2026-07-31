@@ -1,6 +1,6 @@
 # Bianca — 容量规划报告
 
-> 版本：v0.3 | 日期：2026-07-31
+> 版本：v0.4 | 日期：2026-07-31
 
 ---
 
@@ -24,9 +24,9 @@
 | 资源 | 最低 | 推荐 |
 |------|------|------|
 | CPU | 4 核 | 8 核 |
-| RAM | 8 GB | 16 GB（Ollama 7B 模型 ~5GB） |
+| RAM | 8 GB | 16 GB（切换 Ollama 7B 时） |
 | 磁盘 | 10 GB | 20 GB |
-| GPU | 无（CPU 推理） | 可选（加速 Ollama） |
+| GPU | 无（DeepSeek 云端） | 可选（Ollama 本地加速） |
 | 网络 | 稳定访问 demo-api.binance.com | 同 |
 
 ---

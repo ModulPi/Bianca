@@ -2,58 +2,64 @@
 
 English | **[简体中文](./README.md)**
 
-A crypto auto-trading Agent platform for retail users, built on Binance, covering spot, USDT-margined futures, and coin-margined futures.
+A crypto auto-trading Agent platform for retail users. **PoC focus:** LLM autonomous decisions + Binance Demo spot + LangGraph orchestration.
 
-## Product Overview
+## Current Stage: PoC
 
-Bianca (FnAgent) helps users manage digital assets through a hybrid model of **strategy templates + AI analysis + signal copy-trading**, with full-auto or semi-auto execution to lower the barrier for everyday traders.
+On Binance Demo spot, the LLM (Ollama) autonomously analyzes market data, produces buy/sell signals, passes minimal risk checks, and completes at least **one buy + one sell** cycle.
 
-## Key Features
-
-- **Zero-code automation** — configure strategy params and run, no programming required
-- **AI-assisted decisions** — Ollama local LLM by default, cloud models optional
-- **Multi-layer risk control** — strategy → risk → execution; paper trading before live
-- **Full product coverage** — spot, USDT-M, and coin-M futures in one system
-- **Transparent & auditable** — full traceability of every trading decision
-- **Open source & self-hosted** — one-click Docker Compose deploy, full data ownership
+| Item | PoC Scope |
+|------|-----------|
+| Exchange | Binance Demo spot |
+| Decision | LLM autonomous (BUY/SELL/HOLD) |
+| Orchestration | LangGraph Supervisor |
+| Risk Control | Max trade amount + daily loss limit |
+| Deployment | Docker (API) + host Ollama + SQLite |
+| UI | CLI / curl (no web frontend) |
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Agent Orchestration | LangGraph (Supervisor mode) |
-| Backend | Python |
-| Frontend | TypeScript / React |
-| Database | PostgreSQL |
-| LLM | Ollama (local-first) |
-| Exchange | Binance REST + WebSocket |
+| Layer | PoC | MVP (Later) |
+|-------|-----|-------------|
+| Agent | LangGraph + Ollama | + strategy templates |
+| Backend | FastAPI + Python | Same |
+| Exchange | ccxt (Demo spot) | + futures |
+| Database | SQLite | PostgreSQL + TimescaleDB |
+| Frontend | — | React + TypeScript |
 
 ## Documentation
 
 ```
 docs/
-├── PRD-FnAgent.md                          # Product Requirements
-├── 用户故事-FnAgent.md                      # User Stories
-├── system-design/                          # System Design
-│   ├── 系统设计文档-FnAgent.md              #   System Design Document
-│   ├── 容量规划报告-FnAgent.md              #   Capacity Planning Report
-│   └── 技术选型建议-FnAgent.md              #   Technology Selection Guide
-├── outline-design/                         # Outline Design
-│   ├── 架构设计/架构设计文档-FnAgent.md      #   Architecture Design (C4)
+├── PRD-Bianca.md                           # Product requirements
+├── 用户故事-Bianca.md                       # User stories
+├── system-design/                          # System design
+│   ├── 系统设计文档-Bianca.md
+│   ├── 技术选型建议-Bianca.md
+│   └── 容量规划报告-Bianca.md
+├── outline-design/                         # Outline design
+│   ├── 架构设计/架构设计文档-Bianca.md
 │   └── 数据库设计/
-│       ├── 数据库设计文档-FnAgent.md        #   Database Design Document
-│       ├── 数据字典.md                      #   Data Dictionary
-│       └── sql/001_init.sql                #   Initial DDL Script
-└── module-scheduling/                      # Development Schedule
-    ├── 开发排期计划-FnAgent.md              #   Development Plan
-    ├── 里程碑清单-FnAgent.md                #   Milestone Checklist
-    ├── 甘特图描述-FnAgent.md                #   Gantt Chart Description
-    └── 资源分配建议-FnAgent.md              #   Resource Allocation Guide
+│       ├── 数据库设计文档-Bianca.md
+│       ├── 数据字典.md
+│       └── sql/
+│           ├── 001_poc_sqlite.sql
+│           └── 002_mvp_postgres.sql
+└── module-scheduling/                      # Schedule
+    ├── 开发排期计划-Bianca.md
+    ├── 里程碑清单-Bianca.md
+    ├── 甘特图描述-Bianca.md
+    └── 资源分配建议-Bianca.md
 ```
 
-## Development Stage
+## Quick Start (PoC, pending implementation)
 
-Currently in **Proof of Concept (PoC)** — requirements and design docs are complete; implementation is pending.
+```bash
+ollama pull qwen2.5:7b && ollama serve
+cp .env.example .env
+docker compose up api
+curl -X POST http://127.0.0.1:8000/api/v1/agent/start
+```
 
 ## License
 

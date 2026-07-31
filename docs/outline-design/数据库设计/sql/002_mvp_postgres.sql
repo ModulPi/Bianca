@@ -1,7 +1,8 @@
 -- ============================================================
--- FnAgent — 数据库 DDL 脚本
+-- Bianca — MVP PostgreSQL DDL 脚本
 -- DB: PostgreSQL 16 + TimescaleDB 2.x
--- 版本: v1.0 | 日期: 2026-07-28
+-- 版本: v0.3 | 日期: 2026-07-31
+-- 注意: PoC 使用 001_poc_sqlite.sql；本脚本在 MVP 阶段启用
 -- ============================================================
 
 -- 注意: 此脚本需要先 CREATE EXTENSION timescaledb;
@@ -122,22 +123,18 @@ CREATE TABLE klines (
     PRIMARY KEY (time, symbol, interval)
 );
 
--- 转为 Hypertable
 SELECT create_hypertable('klines', 'time',
     chunk_time_interval => INTERVAL '1 day'
 );
 
--- 列式压缩配置
 ALTER TABLE klines SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'symbol, interval',
     timescaledb.compress_orderby = 'time DESC'
 );
 
--- 7 天后自动压缩
 SELECT add_compression_policy('klines', INTERVAL '7 days');
 
--- 连续聚合: 1h K线
 CREATE MATERIALIZED VIEW klines_1h
 WITH (timescaledb.continuous) AS
 SELECT
@@ -158,10 +155,34 @@ SELECT add_continuous_aggregate_policy('klines_1h',
     schedule_interval => INTERVAL '5 minutes'
 );
 
--- 90 天数据保留
 SELECT add_retention_policy('klines', INTERVAL '90 days');
 
--- B-Tree 索引 (加速 symbol + interval + time 查询)
 CREATE INDEX idx_klines_symbol_interval_time ON klines(symbol, interval, time DESC);
+
+-- ============================================================
+-- 7. 半自动待确认信号（MVP）
+-- ============================================================
+CREATE TABLE pending_signals (
+    id              UUID            PRIMARY KEY,
+    strategy_id     UUID            REFERENCES strategies(id) ON DELETE CASCADE,
+    signal          JSONB           NOT NULL,
+    status          TEXT            NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'rejected', 'expired')),
+    expires_at      TIMESTAMPTZ     NOT NULL,
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_pending_signals_status ON pending_signals(status) WHERE status = 'pending';
+
+-- ============================================================
+-- 8. 模拟验证记录（MVP — 模拟→实盘门禁）
+-- ============================================================
+CREATE TABLE paper_validations (
+    id              UUID            PRIMARY KEY,
+    strategy_id     UUID            REFERENCES strategies(id) ON DELETE CASCADE,
+    started_at      TIMESTAMPTZ     NOT NULL,
+    validated_at    TIMESTAMPTZ,
+    status          TEXT            NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'passed', 'failed')),
+    metrics         JSONB           DEFAULT '{}'
+);
 
 COMMIT;

@@ -2,58 +2,72 @@
 
 **[English](./README.en.md)** | 简体中文
 
-面向 C 端用户的加密货币自动交易 Agent 平台，基于币安（Binance）交易所，覆盖现货、U 本位合约、币本位合约全品种。
+面向 C 端用户的加密货币自动交易 Agent 平台。PoC 阶段聚焦：**LLM 自主决策 + 币安 Demo 现货 + LangGraph 编排**。
 
-## 产品定位
+## 当前阶段：PoC
 
-Bianca（FnAgent）帮助用户通过 **策略模板 + AI 分析建议 + 信号跟单** 的混合决策模式实现数字资产管理，支持全自动或半自动执行，降低普通用户的交易门槛。
+在币安 Demo 现货环境上，由 LLM（Ollama）自主分析行情、产出买卖信号，经最小风控后在模拟盘完成 **1 次买入 + 1 次卖出** 闭环。
 
-## 核心特性
-
-- **零门槛自动化** — 无需编程，配置策略参数即可运行
-- **AI 辅助决策** — 默认 Ollama 本地 LLM，也可切换云端模型
-- **多层风控** — 策略 → 风控 → 执行三层分离，支持模拟交易先行验证
-- **全品种覆盖** — 现货 + U 本位合约 + 币本位合约统一管理
-- **透明可审计** — 每笔交易的决策过程可回溯
-- **开源自部署** — Docker Compose 一键部署，数据完全自控
+| 项 | PoC 范围 |
+|----|----------|
+| 交易所 | 币安 Demo 现货 |
+| 决策 | LLM 自主（BUY/SELL/HOLD） |
+| 编排 | LangGraph Supervisor |
+| 风控 | 单笔上限 + 日亏损熔断 |
+| 部署 | Docker(API) + 宿主机 Ollama + SQLite |
+| 界面 | CLI / curl（无 Web 前端） |
 
 ## 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| Agent 编排 | LangGraph（Supervisor 模式） |
-| 后端 | Python |
-| 前端 | TypeScript / React |
-| 数据库 | PostgreSQL |
-| LLM | Ollama（本地优先） |
-| 交易所 | 币安 REST + WebSocket |
+| 层级 | PoC | MVP（后续） |
+|------|-----|------------|
+| Agent | LangGraph + Ollama | + 策略模板 |
+| 后端 | FastAPI + Python | 同 |
+| 交易所 | ccxt (Demo 现货) | + 合约 |
+| 数据库 | SQLite | PostgreSQL + TimescaleDB |
+| 前端 | — | React + TypeScript |
 
 ## 文档目录
 
 ```
 docs/
-├── PRD-FnAgent.md                          # 产品需求文档
-├── 用户故事-FnAgent.md                      # 用户故事集
+├── PRD-Bianca.md                           # 产品需求（含 PoC/MVP 边界）
+├── 用户故事-Bianca.md                       # 用户故事
 ├── system-design/                          # 系统设计
-│   ├── 系统设计文档-FnAgent.md
-│   ├── 容量规划报告-FnAgent.md
-│   └── 技术选型建议-FnAgent.md
+│   ├── 系统设计文档-Bianca.md
+│   ├── 技术选型建议-Bianca.md
+│   └── 容量规划报告-Bianca.md
 ├── outline-design/                         # 概要设计
-│   ├── 架构设计/架构设计文档-FnAgent.md
+│   ├── 架构设计/架构设计文档-Bianca.md
 │   └── 数据库设计/
-│       ├── 数据库设计文档-FnAgent.md
+│       ├── 数据库设计文档-Bianca.md
 │       ├── 数据字典.md
-│       └── sql/001_init.sql
+│       └── sql/
+│           ├── 001_poc_sqlite.sql          # PoC DDL
+│           └── 002_mvp_postgres.sql        # MVP DDL
 └── module-scheduling/                      # 开发排期
-    ├── 开发排期计划-FnAgent.md
-    ├── 里程碑清单-FnAgent.md
-    ├── 甘特图描述-FnAgent.md
-    └── 资源分配建议-FnAgent.md
+    ├── 开发排期计划-Bianca.md
+    ├── 里程碑清单-Bianca.md
+    ├── 甘特图描述-Bianca.md
+    └── 资源分配建议-Bianca.md
 ```
 
-## 开发阶段
+## 快速开始（PoC，待实现）
 
-当前处于 **概念验证（PoC）** 阶段，需求与设计文档已完成，代码开发待启动。
+```bash
+# 1. 宿主机启动 Ollama
+ollama pull qwen2.5:7b
+ollama serve
+
+# 2. 配置环境变量
+cp .env.example .env
+
+# 3. 启动 API
+docker compose up api
+
+# 4. 启动 Agent
+curl -X POST http://127.0.0.1:8000/api/v1/agent/start
+```
 
 ## 许可证
 

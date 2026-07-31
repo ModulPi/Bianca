@@ -95,7 +95,7 @@ async def test_analysis_run_with_mock_llm(client):
         cfg.llm_auto_execute = True
         cfg.trade_symbol = "BTCUSDT"
 
-        with patch("agent.api.routes.run_analysis_agent", mock_result):
+        with patch("agent.graph.analysis_agent.run_analysis_agent", mock_result):
             resp = await client.post(
                 "/api/v1/analysis/run",
                 json={

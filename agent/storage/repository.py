@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.storage.database import get_session_factory
-from agent.storage.models import DecisionLog
+from agent.storage.models import AgentConfigRow, DecisionLog, RiskEvent, TradeLog
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 class DecisionRepository:
@@ -27,7 +32,7 @@ class DecisionRepository:
             prompt_summary=prompt_summary,
             raw_output=raw_output,
             parsed_signal=json.dumps(parsed_signal, ensure_ascii=False),
-            created_at=datetime.now(UTC).isoformat(),
+            created_at=_utc_now(),
         )
         if session is not None:
             session.add(row)
@@ -66,3 +71,157 @@ class DecisionRepository:
         async with factory() as db:
             result = await db.execute(stmt)
             return result.scalar_one_or_none()
+
+
+class TradeRepository:
+    async def save_signal(
+        self,
+        *,
+        trade_id: str,
+        signal: dict,
+        market_data: dict,
+        status: str,
+        risk_decision: str,
+        risk_reason: str | None = None,
+        decision_id: str | None = None,
+        quantity: float | None = None,
+        price: float | None = None,
+        external_order_id: str | None = None,
+        order_type: str | None = None,
+    ) -> TradeLog:
+        row = TradeLog(
+            id=trade_id,
+            symbol=signal.get("symbol") or market_data.get("symbol", "BTCUSDT"),
+            side=signal.get("action", "HOLD"),
+            quantity=quantity,
+            price=price or market_data.get("last"),
+            order_type=order_type,
+            llm_confidence=signal.get("confidence"),
+            decision_reason=signal.get("reason", ""),
+            risk_decision=risk_decision,
+            risk_reason=risk_reason,
+            external_order_id=external_order_id,
+            status=status,
+            created_at=_utc_now(),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def update_status(
+        self,
+        trade_id: str,
+        *,
+        status: str,
+        risk_decision: str | None = None,
+        risk_reason: str | None = None,
+        quantity: float | None = None,
+        price: float | None = None,
+        external_order_id: str | None = None,
+        order_type: str | None = None,
+    ) -> None:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(TradeLog, trade_id)
+            if row is None:
+                return
+            row.status = status
+            if risk_decision is not None:
+                row.risk_decision = risk_decision
+            if risk_reason is not None:
+                row.risk_reason = risk_reason
+            if quantity is not None:
+                row.quantity = quantity
+            if price is not None:
+                row.price = price
+            if external_order_id is not None:
+                row.external_order_id = external_order_id
+            if order_type is not None:
+                row.order_type = order_type
+            await db.commit()
+
+    async def list_recent(self, limit: int = 50) -> list[TradeLog]:
+        stmt = select(TradeLog).order_by(TradeLog.created_at.desc()).limit(limit)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_by_id(self, trade_id: str) -> TradeLog | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(TradeLog, trade_id)
+
+
+class RiskEventRepository:
+    async def save(
+        self,
+        *,
+        event_type: str,
+        detail: dict,
+        related_trade_id: str | None = None,
+    ) -> RiskEvent:
+        row = RiskEvent(
+            id=str(uuid.uuid4()),
+            event_type=event_type,
+            detail=json.dumps(detail, ensure_ascii=False),
+            related_trade_id=related_trade_id,
+            created_at=_utc_now(),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def list_recent(self, limit: int = 50) -> list[RiskEvent]:
+        stmt = select(RiskEvent).order_by(RiskEvent.created_at.desc()).limit(limit)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+
+class AgentConfigRepository:
+    _PNL_KEY = "daily_pnl"
+    _PNL_DATE_KEY = "daily_pnl_date"
+
+    async def _get_row(self, key: str) -> AgentConfigRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(AgentConfigRow, key)
+
+    async def _set_row(self, key: str, value: str) -> None:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(AgentConfigRow, key)
+            if row is None:
+                row = AgentConfigRow(key=key, value=value)
+                db.add(row)
+            else:
+                row.value = value
+            await db.commit()
+
+    async def get_daily_pnl(self) -> float:
+        today = datetime.now(UTC).date().isoformat()
+        date_row = await self._get_row(self._PNL_DATE_KEY)
+        if date_row is None or date_row.value != today:
+            await self._set_row(self._PNL_DATE_KEY, today)
+            await self._set_row(self._PNL_KEY, "0")
+            return 0.0
+        pnl_row = await self._get_row(self._PNL_KEY)
+        if pnl_row is None:
+            return 0.0
+        try:
+            return float(pnl_row.value)
+        except ValueError:
+            return 0.0
+
+    async def set_daily_pnl(self, pnl: float) -> None:
+        today = datetime.now(UTC).date().isoformat()
+        await self._set_row(self._PNL_DATE_KEY, today)
+        await self._set_row(self._PNL_KEY, str(pnl))

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from agent import __version__
 from agent.api.routes import router
 from agent.config import clear_settings_cache
+from agent.runner import get_runner
 from agent.storage.database import close_db, init_db
 
 
@@ -13,6 +14,7 @@ async def lifespan(app: FastAPI):
     clear_settings_cache()
     await init_db()
     yield
+    await get_runner().stop()
     await close_db()
 
 

@@ -14,9 +14,12 @@ class HealthResponse(BaseModel):
 class AgentStatusResponse(BaseModel):
     running: bool
     last_tick: str | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+    tick_count: int = 0
     daily_pnl: float = 0.0
+    tick_interval: int = 300
     llm_auto_execute: bool = True
-    message: str = "Agent runner not implemented yet (P4)"
 
 
 class MessageResponse(BaseModel):
@@ -80,4 +83,52 @@ class DecisionLogItem(BaseModel):
 
 class DecisionListResponse(BaseModel):
     items: list[DecisionLogItem]
+    total: int
+
+
+class AgentTickRequest(BaseModel):
+    market_data: MarketDataInput | None = None
+    thread_id: str = "default"
+
+
+class AgentTickResponse(BaseModel):
+    status: str
+    message: str | None = None
+    llm_signal: dict | None = None
+    risk_decision: dict | None = None
+    order_result: dict | None = None
+    trade_log_id: str | None = None
+    decision_id: str | None = None
+
+
+class TradeLogItem(BaseModel):
+    id: str
+    symbol: str
+    side: str
+    quantity: float | None = None
+    price: float | None = None
+    status: str
+    risk_decision: str | None = None
+    risk_reason: str | None = None
+    decision_reason: str
+    llm_confidence: float | None = None
+    external_order_id: str | None = None
+    created_at: str
+
+
+class TradeListResponse(BaseModel):
+    items: list[TradeLogItem]
+    total: int
+
+
+class RiskEventItem(BaseModel):
+    id: str
+    event_type: str
+    detail: dict
+    related_trade_id: str | None = None
+    created_at: str
+
+
+class RiskEventListResponse(BaseModel):
+    items: list[RiskEventItem]
     total: int

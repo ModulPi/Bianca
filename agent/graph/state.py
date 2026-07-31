@@ -11,3 +11,6 @@ class TradeState(TypedDict, total=False):
     llm_auto_execute: bool
     analysis_result: dict | None
     decision_id: str | None
+    trade_log_id: str | None
+    status: str
+    message: str

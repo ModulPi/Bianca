@@ -38,6 +38,10 @@ class TickerResponse(BaseModel):
     bid: float | None = None
     ask: float | None = None
     timestamp: int | None = None
+    high_24h: float | None = None
+    low_24h: float | None = None
+    change_24h_pct: float | None = None
+    volume_24h_quote_usdt: float | None = None
 
 
 class MarketDataInput(BaseModel):
@@ -46,6 +50,12 @@ class MarketDataInput(BaseModel):
     bid: float | None = None
     ask: float | None = None
     timestamp: int | None = None
+    high_24h: float | None = None
+    low_24h: float | None = None
+    change_24h_pct: float | None = None
+    volume_24h_quote_usdt: float | None = None
+    candles: list[dict] | None = None
+    indicators: dict | None = None
 
 
 class AnalysisRequest(BaseModel):
@@ -92,7 +102,7 @@ class DecisionListResponse(BaseModel):
 
 class AgentTickRequest(BaseModel):
     market_data: MarketDataInput | None = None
-    thread_id: str = "default"
+    thread_id: str | None = None
 
 
 class AgentTickResponse(BaseModel):

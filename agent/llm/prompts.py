@@ -32,12 +32,48 @@ def build_user_prompt(
     max_trade_amount: float,
     trade_symbol: str,
 ) -> str:
-    payload = {
-        "trading_pair": trade_symbol,
-        "max_trade_amount_usdt": max_trade_amount,
-        "market_snapshot": market_data,
-        "instruction": "Return a single JSON object for the next spot trade decision.",
+    """构造 LLM 用户提示词。
+
+    只提取精简字段进 market_snapshot（不整包 dump market_data，避免 K 线撑爆 token）；
+    有 indicators/candles 时追加 technical_context（含 SMA/RSI/趋势/收盘价序列）。
+    """
+    symbol = market_data.get("symbol") or trade_symbol
+
+    snapshot = {
+        "symbol": symbol,
+        "last": market_data.get("last"),
+        "bid": market_data.get("bid"),
+        "ask": market_data.get("ask"),
+        "high_24h": market_data.get("high_24h"),
+        "low_24h": market_data.get("low_24h"),
+        "change_24h_pct": market_data.get("change_24h_pct"),
+        "volume_24h_quote_usdt": market_data.get("volume_24h_quote_usdt"),
     }
+
+    payload: dict[str, Any] = {
+        "trading_pair": symbol,
+        "max_trade_amount_usdt": max_trade_amount,
+        "market_snapshot": {k: v for k, v in snapshot.items() if v is not None},
+        "instruction": (
+            "Analyze using trend, momentum, RSI, and volume. "
+            "Reason briefly; do not overthink. "
+            "Return a single JSON object for the next spot trade decision. "
+            "Act on clear signals; HOLD only when the setup is genuinely unclear."
+        ),
+    }
+
+    indicators = market_data.get("indicators") or {}
+    closes = [float(c["c"]) for c in (market_data.get("candles") or []) if isinstance(c, dict)]
+    if indicators or closes:
+        technical: dict[str, Any] = {"timeframe": "1h"}
+        if closes:
+            technical["closes"] = [round(c, 4) for c in closes]
+        for key in ("sma5", "sma20", "rsi14", "trend", "window_change_pct", "momentum_5m_pct"):
+            value = indicators.get(key)
+            if value is not None:
+                technical[key] = value
+        payload["technical_context"] = technical
+
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 

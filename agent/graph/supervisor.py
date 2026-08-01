@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -24,15 +25,8 @@ async def fetch_market_node(state: TradeState) -> TradeState:
         raise RuntimeError("market_data missing and Binance not configured")
 
     async with SpotDemoExchange(settings) as demo:
-        ticker = await demo.fetch_ticker(settings.trade_symbol)
+        market_data = await demo.fetch_market_context(settings.trade_symbol)
 
-    market_data = {
-        "symbol": ticker.get("symbol", settings.trade_symbol),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-    }
     return {**state, "market_data": market_data}
 
 
@@ -103,10 +97,14 @@ def build_trade_graph() -> StateGraph:
 async def run_agent_tick(
     *,
     market_data: dict[str, Any] | None = None,
-    thread_id: str = "default",
+    thread_id: str | None = None,
     settings: Settings | None = None,
 ) -> TradeState:
-    """Run one full Supervisor → Analysis → Risk → Execute cycle."""
+    """Run one full Supervisor → Analysis → Risk → Execute cycle.
+
+    thread_id 缺省时每轮生成唯一值：避免 LangGraph 检查点从上一轮 END 恢复，
+    导致 market_data 被首次 tick 冻结、后续不再刷新行情。
+    """
     cfg = settings or get_settings()
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = cfg.data_dir / "checkpoints.sqlite"
@@ -120,6 +118,6 @@ async def run_agent_tick(
     graph = build_trade_graph()
     async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
         app = graph.compile(checkpointer=checkpointer)
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {"configurable": {"thread_id": thread_id or datetime.now(UTC).isoformat()}}
         result = await app.ainvoke(initial, config)
         return result

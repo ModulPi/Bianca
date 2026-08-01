@@ -136,7 +136,7 @@ async def _resolve_market_data(body: AnalysisRequest) -> dict:
     sym = settings.trade_symbol
     try:
         async with SpotDemoExchange(settings) as demo:
-            ticker = await demo.fetch_ticker(sym)
+            return await demo.fetch_market_context(sym)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=502,
@@ -145,13 +145,6 @@ async def _resolve_market_data(body: AnalysisRequest) -> dict:
                 "Tip: pass market_data in POST body when Binance is unreachable."
             ),
         ) from exc
-    return {
-        "symbol": ticker.get("symbol", sym),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-    }
 
 
 @router.post("/agent/tick", response_model=AgentTickResponse)
@@ -353,4 +346,8 @@ async def exchange_ticker(symbol: str | None = None) -> TickerResponse:
         bid=ticker.get("bid"),
         ask=ticker.get("ask"),
         timestamp=ticker.get("timestamp"),
+        high_24h=ticker.get("high"),
+        low_24h=ticker.get("low"),
+        change_24h_pct=ticker.get("percentage"),
+        volume_24h_quote_usdt=ticker.get("quoteVolume"),
     )

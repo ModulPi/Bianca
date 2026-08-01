@@ -54,7 +54,7 @@ class MarketAnalyzer:
         self,
         messages: list[dict[str, str]],
         *,
-        max_tokens: int = 512,
+        max_tokens: int = 4096,
         require_content: bool = True,
     ) -> ChatResult:
         payload: dict[str, Any] = {
@@ -121,8 +121,22 @@ class MarketAnalyzer:
                 [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
-                ]
+                ],
+                require_content=False,
             )
+            if not result.content.strip():
+                # 推理模型常把 token 全耗在思考上导致 content 为空：提示简短作答再试一次
+                logger.warning("LLM reasoning exhausted tokens, retrying with brevity hint")
+                brevity_system = SYSTEM_PROMPT + "\n\nThink very briefly, then output only the JSON."
+                result = await self._chat(
+                    [
+                        {"role": "system", "content": brevity_system},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    require_content=False,
+                )
+            if not result.content.strip():
+                raise ValueError("Empty LLM response content")
             signal = parse_trade_signal(result.content, default_symbol=symbol)
             return signal, result.content, prompt_summary, result.usage
         except httpx.TimeoutException:

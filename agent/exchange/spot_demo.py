@@ -72,12 +72,14 @@ class SpotDemoExchange:
 
         candles_1h: list[list] = []
         candles_5m: list[list] = []
+        # 注意：ccxt fetch_ohlcv(symbol, timeframe, since, limit, params) 的
+        # 第三个位置参数是 since（时间戳），limit 必须用关键字或第 4 位传，否则会拉全部历史
         try:
-            candles_1h = await self.exchange.fetch_ohlcv(sym, "1h", 25)
+            candles_1h = await self.exchange.fetch_ohlcv(sym, "1h", limit=25)
         except Exception as exc:  # noqa: BLE001 — 降级处理
             logger.warning("fetch_ohlcv 1h failed, degraded to ticker-only: %s", exc)
         try:
-            candles_5m = await self.exchange.fetch_ohlcv(sym, "5m", 13)
+            candles_5m = await self.exchange.fetch_ohlcv(sym, "5m", limit=13)
         except Exception as exc:  # noqa: BLE001
             logger.warning("fetch_ohlcv 5m failed: %s", exc)
 

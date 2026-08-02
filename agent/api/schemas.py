@@ -5,6 +5,7 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     database_backend: str = "sqlite"
+    schema_mode: str = "poc"
     redis: str = "not_configured"
     redis_detail: str | None = None
     binance_demo: str

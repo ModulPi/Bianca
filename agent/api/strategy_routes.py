@@ -12,6 +12,7 @@ from agent.api.schemas import (
     StrategyTickResponse,
     StrategyUpdateRequest,
 )
+from agent.storage.json_utils import parse_json_field
 from agent.storage.repository import StrategyRepository
 from agent.strategy.engine import default_params, run_strategy_tick
 from agent.strategy.runner import get_strategy_runner
@@ -26,8 +27,8 @@ def _to_item(row) -> StrategyItem:
         type=row.type,
         market=row.market,
         execution_mode=row.execution_mode,
-        params=json.loads(row.params_json),
-        state=json.loads(row.state_json),
+        params=parse_json_field(row.params_json),
+        state=parse_json_field(row.state_json),
         status=row.status,
         created_at=row.created_at,
         updated_at=row.updated_at,

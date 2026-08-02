@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import UTC, datetime
 
 from agent.config import Settings, get_settings
+from agent.storage.json_utils import parse_json_field
 from agent.storage.repository import PaperValidationRepository
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ async def record_session_for_validation(summary: dict, *, settings: Settings | N
     if row is None:
         return {"status": "none"}
 
-    metrics = json.loads(row.metrics_json)
+    metrics = parse_json_field(row.metrics_json)
     hours = _session_hours(summary["started_at"], summary.get("ended_at"))
     metrics["cumulative_hours"] = round(metrics.get("cumulative_hours", 0) + hours, 4)
     metrics["sessions"] = metrics.get("sessions", 0) + 1
@@ -61,7 +61,7 @@ async def evaluate_validation(*, settings: Settings | None = None) -> dict:
     if row is None:
         return {"status": "none", "can_enable_live": False, "metrics": {}}
 
-    metrics = json.loads(row.metrics_json)
+    metrics = parse_json_field(row.metrics_json)
     min_h = cfg.paper_validation_min_hours
     hours_ok = metrics.get("cumulative_hours", 0) >= min_h
     loop_ok = not cfg.paper_validation_require_loop or metrics.get("loop_closed_sessions", 0) >= 1

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any
+
+from agent.storage.json_utils import parse_json_field
 
 from agent.api.ws_manager import ws_manager
 from agent.config import Settings, get_settings
@@ -68,8 +68,8 @@ async def confirm_pending_signal(
         await repo.update_status(pending_id, "expired")
         raise ValueError("信号已过期")
 
-    signal = json.loads(row.signal_json)
-    market_data = json.loads(row.market_data_json)
+    signal = parse_json_field(row.signal_json)
+    market_data = parse_json_field(row.market_data_json)
     state: TradeState = {
         "llm_signal": signal,
         "market_data": market_data,

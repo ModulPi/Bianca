@@ -32,7 +32,8 @@ from agent.exchange._client import format_binance_error
 from agent.graph.supervisor import run_agent_tick
 from agent.llm.analyzer import check_llm
 from agent.runner import get_runner
-from agent.storage.database import get_engine
+from agent.storage.database import get_engine, schema_mode
+from agent.storage.json_utils import parse_json_field
 from agent.storage.repository import DecisionRepository, RiskEventRepository, TradeRepository
 
 router = APIRouter(prefix="/api/v1")
@@ -69,6 +70,7 @@ async def health() -> HealthResponse:
         status=overall,
         database=db_status,
         database_backend=settings.database_backend,
+        schema_mode=schema_mode(),
         redis=redis.get("status", "not_configured"),
         redis_detail=redis.get("detail"),
         binance_demo=binance["status"],
@@ -272,7 +274,7 @@ async def list_risk_events(limit: int = 50) -> RiskEventListResponse:
         RiskEventItem(
             id=r.id,
             event_type=r.event_type,
-            detail=json.loads(r.detail),
+            detail=parse_json_field(r.detail),
             related_trade_id=r.related_trade_id,
             created_at=r.created_at,
         )
@@ -315,7 +317,7 @@ async def list_decisions(limit: int = 50) -> DecisionListResponse:
             id=row.id,
             model_used=row.model_used,
             prompt_summary=row.prompt_summary,
-            parsed_signal=json.loads(row.parsed_signal),
+            parsed_signal=parse_json_field(row.parsed_signal),
             prompt_tokens=row.prompt_tokens,
             completion_tokens=row.completion_tokens,
             total_tokens=row.total_tokens,

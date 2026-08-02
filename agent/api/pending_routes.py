@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, HTTPException
+
+from agent.storage.json_utils import parse_json_field
 
 from agent.api.schemas import (
     ConfirmPendingResponse,
@@ -20,7 +20,7 @@ def _to_item(row) -> PendingSignalItem:
     return PendingSignalItem(
         id=row.id,
         strategy_id=row.strategy_id,
-        signal=json.loads(row.signal_json),
+        signal=parse_json_field(row.signal_json),
         status=row.status,
         expires_at=row.expires_at,
         created_at=row.created_at,

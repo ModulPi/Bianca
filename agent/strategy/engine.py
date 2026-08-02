@@ -10,6 +10,7 @@ from agent.graph.execute_agent import run_execute_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
 from agent.llm.prompts import normalize_symbol
+from agent.storage.json_utils import parse_json_field
 from agent.storage.repository import StrategyRepository
 from agent.strategy.base import StrategyEvalResult, StrategySignal, StrategyType
 from agent.strategy.dca import evaluate_dca
@@ -102,8 +103,8 @@ async def run_strategy_tick(strategy_id: str, *, settings: Settings | None = Non
     if row.status != "running":
         raise ValueError(f"策略状态 {row.status}，非 running")
 
-    params = json.loads(row.params_json)
-    state = json.loads(row.state_json)
+    params = parse_json_field(row.params_json)
+    state = parse_json_field(row.state_json)
     market_data = await fetch_market(cfg)
     symbol = market_data.get("symbol") or cfg.trade_symbol
 

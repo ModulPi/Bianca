@@ -21,6 +21,9 @@ class TradeLog(Base):
     risk_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_order_id: Mapped[str | None] = mapped_column(String, nullable=True)
     decision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    strategy_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    strategy_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    execution_mode: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -36,6 +39,7 @@ class RiskEvent(Base):
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     related_trade_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    related_strategy_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 

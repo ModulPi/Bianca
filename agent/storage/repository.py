@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.storage.database import get_session_factory
+from agent.config import get_settings
+from agent.storage.constants import (
+    DEFAULT_AGENT_STRATEGY_ID,
+    DEFAULT_AGENT_STRATEGY_NAME,
+)
+from agent.storage.database import get_session_factory, schema_mode
 from agent.storage.models import (
     AgentConfigRow,
     DecisionLog,
@@ -186,6 +191,11 @@ class TradeRepository:
             status=status,
             created_at=_utc_now(),
         )
+        if schema_mode() == "mvp":
+            settings = get_settings()
+            row.strategy_id = DEFAULT_AGENT_STRATEGY_ID
+            row.strategy_name = DEFAULT_AGENT_STRATEGY_NAME
+            row.execution_mode = settings.resolved_execution_mode
         factory = get_session_factory()
         async with factory() as db:
             db.add(row)

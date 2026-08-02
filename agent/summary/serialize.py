@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
-from typing import Any
-
-from agent.storage.models import SessionSummaryRow
+from agent.storage.json_utils import parse_json_field
 
 
 def session_row_to_summary(row: SessionSummaryRow) -> dict[str, Any]:
@@ -17,16 +14,16 @@ def session_row_to_summary(row: SessionSummaryRow) -> dict[str, Any]:
             "trading_style": row.trading_style,
             "last_status": None,
         },
-        "usage": json.loads(row.usage_json),
-        "trades": json.loads(row.trades_json),
-        "pnl": json.loads(row.pnl_json),
-        "positions": json.loads(row.positions_json),
+        "usage": parse_json_field(row.usage_json),
+        "trades": parse_json_field(row.trades_json),
+        "pnl": parse_json_field(row.pnl_json),
+        "positions": parse_json_field(row.positions_json),
         "highlights": _highlights_from_row(row),
     }
 
 
 def _highlights_from_row(row: SessionSummaryRow) -> list[str]:
-    trades = json.loads(row.trades_json)
+    trades = parse_json_field(row.trades_json)
     lines: list[str] = []
     if trades.get("loop_closed"):
         lines.append("闭环：≥1 BUY filled + ≥1 SELL filled")

@@ -8,6 +8,7 @@ from typing import Any
 
 from agent.config import Settings, get_settings
 from agent.llm.prompts import base_asset_for_symbol
+from agent.storage.json_utils import parse_json_field
 from agent.storage.models import SessionSummaryRow, TradeLog
 from agent.storage.repository import (
     AgentConfigRepository,
@@ -142,7 +143,7 @@ async def build_daily_summary_text(date: str | None = None) -> str:
     repo = SessionSummaryRepository()
     rows = await repo.list_recent(limit=100)
     day_rows = [r for r in rows if r.started_at.startswith(day)]
-    total_pnl = sum(json.loads(r.pnl_json).get("realized_usdt", 0) for r in day_rows)
+    total_pnl = sum(parse_json_field(r.pnl_json).get("realized_usdt", 0) for r in day_rows)
     loops = sum(1 for r in day_rows if r.loop_closed)
     return f"日期 {day}\n会话 {len(day_rows)} · 闭环 {loops}\n已实现 PnL: {total_pnl:.4f} USDT"
 

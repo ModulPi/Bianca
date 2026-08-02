@@ -16,7 +16,7 @@ On Binance Demo spot, the LLM autonomously analyzes market data, produces buy/se
 | Orchestration | LangGraph Supervisor |
 | Risk Control | Max trade amount + daily loss limit |
 | Deployment | Docker (API) + SQLite |
-| UI | CLI / curl (no web frontend) |
+| UI | **Web console** (`web/`) + CLI / curl |
 
 ## Tech Stack
 
@@ -26,7 +26,7 @@ On Binance Demo spot, the LLM autonomously analyzes market data, produces buy/se
 | Backend | FastAPI + Python | Same |
 | Exchange | ccxt (Demo spot) | + futures |
 | Database | SQLite | PostgreSQL + TimescaleDB |
-| Frontend | — | React + TypeScript |
+| Frontend | React + TypeScript (M7 `web/`) | Same + semi-auto confirm |
 
 ## Quick Start (PoC)
 
@@ -46,6 +46,16 @@ curl http://127.0.0.1:8000/api/v1/summary/session/latest
 ```
 
 **Switch to local Ollama:** set `LLM_PROVIDER=ollama` in `.env` and restart the API.
+
+## Web Console (M7)
+
+```bash
+docker compose up -d --build
+cd web && npm install && npm run dev
+# Open http://127.0.0.1:3000
+```
+
+Pages: dashboard (summary + agent control), trades, sessions, token usage.
 
 ## License
 

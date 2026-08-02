@@ -16,7 +16,7 @@
 | 编排 | LangGraph Supervisor |
 | 风控 | 单笔上限 + 日亏损熔断 |
 | 部署 | Docker(API) + SQLite |
-| 界面 | CLI / curl（无 Web 前端） |
+| 界面 | **Web 控制台**（`web/`）+ CLI / curl |
 
 ## 技术栈
 
@@ -26,7 +26,7 @@
 | 后端 | FastAPI + Python | 同 |
 | 交易所 | ccxt (Demo 现货) | + 合约 |
 | 数据库 | SQLite | PostgreSQL + TimescaleDB |
-| 前端 | — | React + TypeScript |
+| 前端 | React + TypeScript（M7 `web/`） | 同 + 半自动确认 |
 
 ## 文档目录
 
@@ -81,6 +81,21 @@ curl http://127.0.0.1:8000/api/v1/checkpoints/threads/default/history
 ```
 
 **切换本地 Ollama：** 修改 `.env` 中 `LLM_PROVIDER=ollama` 及相关 URL/模型，重启 API 即可。
+
+## Web 控制台（M7）
+
+```bash
+# 终端 1：API
+docker compose up -d --build
+
+# 终端 2：前端 dev server（代理 /api → :8000）
+cd web
+npm install
+npm run dev
+# 浏览器打开 http://127.0.0.1:3000
+```
+
+页面：仪表盘（会话汇总 + Agent 启停）、交易记录、会话历史、Token 消耗。
 
 ## 许可证
 

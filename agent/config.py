@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/bianca.db"
+    redis_url: str = ""
 
     # Server
     api_host: str = "127.0.0.1"
@@ -105,6 +106,19 @@ class Settings(BaseSettings):
     @property
     def telegram_configured(self) -> bool:
         return bool(self.telegram_bot_token.strip() and self.telegram_chat_id.strip())
+
+    @property
+    def redis_configured(self) -> bool:
+        return bool(self.redis_url.strip())
+
+    @property
+    def database_backend(self) -> str:
+        url = self.database_url.lower()
+        if url.startswith("sqlite"):
+            return "sqlite"
+        if "postgresql" in url or url.startswith("postgres"):
+            return "postgresql"
+        return "unknown"
 
 
 @lru_cache

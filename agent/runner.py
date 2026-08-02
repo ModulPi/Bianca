@@ -56,6 +56,10 @@ class AgentRunner:
 
         await assert_demo_mode_for_trading()
         await ensure_validation_running(settings=settings)
+        if self._snapshot.session_id and self._snapshot.session_started_at:
+            from agent.cache.redis_client import set_active_session
+
+            await set_active_session(self._snapshot.session_id, self._snapshot.session_started_at)
         self._task = asyncio.create_task(self._loop(), name="bianca-agent-runner")
         logger.info(
             "Agent runner started (interval=%ss, session=%s)",
@@ -75,6 +79,10 @@ class AgentRunner:
                 pass
             self._task = None
         self._snapshot.running = False
+        if self._snapshot.session_id:
+            from agent.cache.redis_client import clear_active_session
+
+            await clear_active_session(self._snapshot.session_id)
         if self._snapshot.session_id and self._snapshot.session_started_at:
             try:
                 await close_session(

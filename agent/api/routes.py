@@ -24,6 +24,7 @@ from agent.api.schemas import (
     TradeSignalResponse,
     UsageSummaryResponse,
 )
+from agent.cache.redis_client import redis_health
 from agent.config import get_settings
 from agent.confirmation.service import confirm_pending_signal
 from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo
@@ -51,9 +52,12 @@ async def health() -> HealthResponse:
 
     binance = await check_binance_demo()
     llm = await check_llm(settings)
+    redis = await redis_health()
 
     overall = "ok"
     if db_status != "ok" or binance["status"] == "error" or llm["status"] == "error":
+        overall = "degraded"
+    if redis.get("status") == "error":
         overall = "degraded"
 
     llm_status = llm["status"]
@@ -64,6 +68,9 @@ async def health() -> HealthResponse:
     return HealthResponse(
         status=overall,
         database=db_status,
+        database_backend=settings.database_backend,
+        redis=redis.get("status", "not_configured"),
+        redis_detail=redis.get("detail"),
         binance_demo=binance["status"],
         binance_detail=binance.get("detail"),
         llm_provider=settings.llm_provider,

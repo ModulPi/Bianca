@@ -1,0 +1,44 @@
+# M4 基础设施：PostgreSQL(TimescaleDB) + Redis
+# 用法: docker compose -f docker-compose.yml -f docker-compose.m4.yml up -d --build
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: bianca
+      POSTGRES_PASSWORD: bianca
+      POSTGRES_DB: bianca
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bianca -d bianca"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bianca:bianca@postgres:5432/bianca
+      REDIS_URL: redis://redis:6379/0
+
+volumes:
+  pgdata:

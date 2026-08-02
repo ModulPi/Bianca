@@ -22,6 +22,7 @@ from agent.config import clear_settings_cache
 from agent.confirmation.service import expire_pending_signals
 from agent.runner import get_runner
 from agent.strategy.runner import get_strategy_runner
+from agent.cache.redis_client import close_redis, init_redis
 from agent.storage.database import close_db, init_db
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ async def _expire_pending_loop() -> None:
 async def lifespan(app: FastAPI):
     clear_settings_cache()
     await init_db()
+    await init_redis()
     task = asyncio.create_task(_expire_pending_loop())
     yield
     task.cancel()
@@ -49,6 +51,7 @@ async def lifespan(app: FastAPI):
         pass
     await get_runner().stop()
     await get_strategy_runner().stop()
+    await close_redis()
     await close_db()
 
 

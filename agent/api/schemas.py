@@ -4,6 +4,9 @@ from pydantic import BaseModel
 class HealthResponse(BaseModel):
     status: str
     database: str
+    database_backend: str = "sqlite"
+    redis: str = "not_configured"
+    redis_detail: str | None = None
     binance_demo: str
     binance_detail: str | None = None
     llm_provider: str

@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # Agent
     agent_tick_interval: int = Field(default=300, ge=10)
     trade_symbol: str = "BTCUSDT"
+    # K 线采集（仅 PostgreSQL schema_mode=mvp 时写入）
+    kline_collector_enabled: bool = True
+    kline_interval: str = "1m"
+    kline_symbols: str = ""
+    kline_fetch_limit: int = Field(default=100, ge=1, le=1000)
     # conservative | aggressive — PoC 激进模式优先完成买卖闭环（模拟盘）
     trading_style: Literal["conservative", "aggressive"] = "conservative"
     poc_min_trade_usdt: float = Field(default=10.0, gt=0)
@@ -72,7 +77,7 @@ class Settings(BaseSettings):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
 
-    @field_validator("notify_on_session_close", "notify_on_risk_reject", "paper_validation_require_loop", "futures_enabled", mode="before")
+    @field_validator("notify_on_session_close", "notify_on_risk_reject", "paper_validation_require_loop", "futures_enabled", "kline_collector_enabled", mode="before")
     @classmethod
     def parse_notify_bool(cls, value: object) -> bool:
         if isinstance(value, str):

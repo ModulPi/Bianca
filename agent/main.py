@@ -20,6 +20,7 @@ from agent.api.validation_routes import (
 from agent.api.ws_routes import router as ws_router
 from agent.config import clear_settings_cache
 from agent.confirmation.service import expire_pending_signals
+from agent.market.kline_collector import run_kline_collector_loop
 from agent.runner import get_runner
 from agent.strategy.runner import get_strategy_runner
 from agent.cache.redis_client import close_redis, init_redis
@@ -42,13 +43,16 @@ async def lifespan(app: FastAPI):
     clear_settings_cache()
     await init_db()
     await init_redis()
-    task = asyncio.create_task(_expire_pending_loop())
+    expire_task = asyncio.create_task(_expire_pending_loop())
+    kline_task = asyncio.create_task(run_kline_collector_loop())
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    expire_task.cancel()
+    kline_task.cancel()
+    for task in (expire_task, kline_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await get_runner().stop()
     await get_strategy_runner().stop()
     await close_redis()

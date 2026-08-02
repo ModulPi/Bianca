@@ -57,6 +57,18 @@ class SpotDemoExchange:
         sym = symbol or self._settings.trade_symbol
         return await self.exchange.fetch_ticker(sym)
 
+    async def fetch_ohlcv(
+        self,
+        symbol: str | None = None,
+        *,
+        timeframe: str = "1m",
+        since: int | None = None,
+        limit: int = 100,
+    ) -> list[list[Any]]:
+        raw = symbol or self._settings.trade_symbol
+        sym = resolve_market_symbol(self.exchange, raw)
+        return await self.exchange.fetch_ohlcv(sym, timeframe, since=since, limit=limit)
+
     async def create_market_order(
         self,
         side: str,

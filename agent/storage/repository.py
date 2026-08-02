@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.config import get_settings
@@ -685,3 +685,78 @@ class PaperValidationRepository:
                 row.status = "cancelled"
             await db.commit()
         return await self.create(started_at=_utc_now())
+
+
+class KlineRepository:
+    _INSERT_SQL = text(
+        """
+        INSERT INTO klines (time, symbol, interval, open, high, low, close, volume, trades)
+        VALUES (:time, :symbol, :interval, :open, :high, :low, :close, :volume, :trades)
+        ON CONFLICT (time, symbol, interval) DO NOTHING
+        """
+    )
+
+    async def get_latest_time(self, symbol: str, interval: str) -> datetime | None:
+        if schema_mode() != "mvp":
+            return None
+        stmt = text(
+            """
+            SELECT time FROM klines
+            WHERE symbol = :symbol AND interval = :interval
+            ORDER BY time DESC
+            LIMIT 1
+            """
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt, {"symbol": symbol, "interval": interval})
+            row = result.first()
+            if row is None:
+                return None
+            value = row[0]
+            if isinstance(value, datetime):
+                return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+            return datetime.fromisoformat(str(value)).astimezone(UTC)
+
+    async def insert_bars(self, bars: list) -> int:
+        if schema_mode() != "mvp" or not bars:
+            return 0
+        payload = [
+            {
+                "time": bar.time,
+                "symbol": bar.symbol,
+                "interval": bar.interval,
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "trades": bar.trades,
+            }
+            for bar in bars
+        ]
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(self._INSERT_SQL, payload)
+            await db.commit()
+            count = result.rowcount
+            if count is None or count < 0:
+                return len(bars)
+            return count
+
+    async def count(self, symbol: str | None = None, interval: str | None = None) -> int:
+        if schema_mode() != "mvp":
+            return 0
+        clauses = ["1=1"]
+        params: dict[str, str] = {}
+        if symbol:
+            clauses.append("symbol = :symbol")
+            params["symbol"] = symbol
+        if interval:
+            clauses.append("interval = :interval")
+            params["interval"] = interval
+        stmt = text(f"SELECT COUNT(*) FROM klines WHERE {' AND '.join(clauses)}")
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt, params)
+            return int(result.scalar_one())

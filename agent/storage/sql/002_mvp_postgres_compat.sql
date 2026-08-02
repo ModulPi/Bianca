@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS klines (
 
 DO $ts$ BEGIN IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_hypertable') THEN PERFORM create_hypertable('klines', 'time', if_not_exists => TRUE); END IF; EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'klines hypertable skipped: %', SQLERRM; END $ts$;
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_klines_time_symbol_interval ON klines(time, symbol, interval);
 CREATE INDEX IF NOT EXISTS idx_klines_symbol_interval_time ON klines(symbol, interval, time DESC);
 
 -- Agent 默认策略（无 strategy_id 的 Agent 交易挂靠此记录）

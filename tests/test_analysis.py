@@ -83,6 +83,7 @@ async def test_analysis_run_with_mock_llm(client):
                 "prompt_summary": "BTCUSDT last=65000",
                 "auto_execute": False,
                 "decision_id": "test-decision-id",
+                "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
             },
         )()
     )
@@ -113,6 +114,7 @@ async def test_analysis_run_with_mock_llm(client):
     assert body["signal"]["action"] == "HOLD"
     assert body["auto_execute"] is False
     assert body["decision_id"] == "test-decision-id"
+    assert body["usage"]["total_tokens"] == 150
 
 
 @pytest.mark.asyncio

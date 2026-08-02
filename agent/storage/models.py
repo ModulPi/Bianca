@@ -1,4 +1,4 @@
-from sqlalchemy import Float, Index, String, Text
+from sqlalchemy import Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -20,6 +20,7 @@ class TradeLog(Base):
     risk_decision: Mapped[str | None] = mapped_column(String, nullable=True)
     risk_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_order_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    decision_id: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -49,6 +50,9 @@ class DecisionLog(Base):
     prompt_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_output: Mapped[str] = mapped_column(Text, nullable=False)
     parsed_signal: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 

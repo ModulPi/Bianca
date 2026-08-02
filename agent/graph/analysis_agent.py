@@ -28,7 +28,7 @@ async def run_analysis_agent(
     """
     cfg = settings or get_settings()
     analyzer = MarketAnalyzer(cfg)
-    signal, raw_output, prompt_summary = await analyzer.analyze(market_data)
+    signal, raw_output, prompt_summary, usage = await analyzer.analyze(market_data)
     auto_execute = should_auto_execute(signal, cfg)
 
     decision_id: str | None = None
@@ -41,6 +41,9 @@ async def run_analysis_agent(
             prompt_summary=prompt_summary,
             raw_output=raw_output or signal.reason,
             parsed_signal=signal.to_dict(),
+            prompt_tokens=(usage or {}).get("prompt_tokens"),
+            completion_tokens=(usage or {}).get("completion_tokens"),
+            total_tokens=(usage or {}).get("total_tokens"),
         )
 
     return AnalysisResult(
@@ -50,6 +53,7 @@ async def run_analysis_agent(
         prompt_summary=prompt_summary,
         auto_execute=auto_execute,
         decision_id=decision_id,
+        usage=usage,
     )
 
 

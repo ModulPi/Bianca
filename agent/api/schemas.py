@@ -71,6 +71,7 @@ class AnalysisResponse(BaseModel):
     llm_auto_execute: bool
     decision_id: str | None = None
     raw_output: str | None = None
+    usage: dict | None = None
 
 
 class DecisionLogItem(BaseModel):
@@ -78,6 +79,9 @@ class DecisionLogItem(BaseModel):
     model_used: str
     prompt_summary: str | None = None
     parsed_signal: dict
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
     created_at: str
 
 
@@ -107,12 +111,14 @@ class TradeLogItem(BaseModel):
     side: str
     quantity: float | None = None
     price: float | None = None
+    order_type: str | None = None
     status: str
     risk_decision: str | None = None
     risk_reason: str | None = None
     decision_reason: str
     llm_confidence: float | None = None
     external_order_id: str | None = None
+    decision_id: str | None = None
     created_at: str
 
 
@@ -132,3 +138,15 @@ class RiskEventItem(BaseModel):
 class RiskEventListResponse(BaseModel):
     items: list[RiskEventItem]
     total: int
+
+
+class UsageBucket(BaseModel):
+    calls: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class UsageSummaryResponse(BaseModel):
+    today: UsageBucket
+    total: UsageBucket

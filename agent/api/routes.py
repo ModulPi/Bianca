@@ -21,6 +21,7 @@ from agent.api.schemas import (
     TradeListResponse,
     TradeLogItem,
     TradeSignalResponse,
+    UsageSummaryResponse,
 )
 from agent.config import get_settings
 from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo
@@ -187,11 +188,21 @@ async def agent_tick(body: AgentTickRequest | None = None) -> AgentTickResponse:
 
 
 @router.get("/trades", response_model=TradeListResponse)
-async def list_trades(limit: int = 50) -> TradeListResponse:
+async def list_trades(
+    limit: int = 50,
+    symbol: str | None = None,
+    side: str | None = None,
+    status: str | None = None,
+) -> TradeListResponse:
     if limit < 1 or limit > 200:
         raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
     repo = TradeRepository()
-    rows = await repo.list_recent(limit=limit)
+    rows = await repo.list_recent(
+        limit=limit,
+        symbol=symbol,
+        side=side,
+        status=status,
+    )
     items = [
         TradeLogItem(
             id=r.id,
@@ -199,12 +210,14 @@ async def list_trades(limit: int = 50) -> TradeListResponse:
             side=r.side,
             quantity=r.quantity,
             price=r.price,
+            order_type=r.order_type,
             status=r.status,
             risk_decision=r.risk_decision,
             risk_reason=r.risk_reason,
             decision_reason=r.decision_reason,
             llm_confidence=r.llm_confidence,
             external_order_id=r.external_order_id,
+            decision_id=r.decision_id,
             created_at=r.created_at,
         )
         for r in rows
@@ -224,12 +237,14 @@ async def get_trade(trade_id: str) -> TradeLogItem:
         side=row.side,
         quantity=row.quantity,
         price=row.price,
+        order_type=row.order_type,
         status=row.status,
         risk_decision=row.risk_decision,
         risk_reason=row.risk_reason,
         decision_reason=row.decision_reason,
         llm_confidence=row.llm_confidence,
         external_order_id=row.external_order_id,
+        decision_id=row.decision_id,
         created_at=row.created_at,
     )
 
@@ -272,6 +287,7 @@ async def run_analysis(body: AnalysisRequest | None = None) -> AnalysisResponse:
         llm_auto_execute=settings.llm_auto_execute,
         decision_id=result.decision_id,
         raw_output=result.raw_output or None,
+        usage=result.usage,
     )
 
 
@@ -287,11 +303,22 @@ async def list_decisions(limit: int = 50) -> DecisionListResponse:
             model_used=row.model_used,
             prompt_summary=row.prompt_summary,
             parsed_signal=json.loads(row.parsed_signal),
+            prompt_tokens=row.prompt_tokens,
+            completion_tokens=row.completion_tokens,
+            total_tokens=row.total_tokens,
             created_at=row.created_at,
         )
         for row in rows
     ]
     return DecisionListResponse(items=items, total=len(items))
+
+
+@router.get("/usage", response_model=UsageSummaryResponse)
+async def usage_summary() -> UsageSummaryResponse:
+    """Token 消耗汇总：today（UTC）+ total。"""
+    repo = DecisionRepository()
+    summary = await repo.usage_summary()
+    return UsageSummaryResponse(**summary)
 
 
 @router.get("/exchange/balance", response_model=BalanceResponse)

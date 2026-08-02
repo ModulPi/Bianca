@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -39,3 +39,4 @@ class AnalysisResult(BaseModel):
     prompt_summary: str
     auto_execute: bool
     decision_id: str | None = None
+    usage: dict[str, Any] | None = None

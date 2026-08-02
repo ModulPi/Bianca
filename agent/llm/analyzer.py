@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -13,6 +14,15 @@ from agent.llm.provider import LLMEndpoint, resolve_llm_endpoint
 from agent.llm.schemas import TradeSignal
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ChatResult:
+    """一次 LLM 调用的结果：正文 + 供应商返回的 usage（token 消耗）。"""
+
+    content: str
+    usage: dict[str, Any] | None = None
+
 
 HOLD_ON_FAILURE = TradeSignal(
     action="HOLD",
@@ -40,14 +50,23 @@ class MarketAnalyzer:
             headers["Authorization"] = f"Bearer {self._endpoint.api_key}"
         return headers
 
-    async def _chat(self, messages: list[dict[str, str]], *, max_tokens: int = 512) -> str:
+    async def _chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int = 512,
+        require_content: bool = True,
+    ) -> ChatResult:
         payload: dict[str, Any] = {
             "model": self._endpoint.model,
             "messages": messages,
             "temperature": 0.2,
             "max_tokens": max_tokens,
         }
-        if self._endpoint.provider == "deepseek":
+        # DeepSeek 要求启用 json_object 时 prompt 必须出现 "json" 字样，否则 400
+        if self._endpoint.provider == "deepseek" and any(
+            "json" in (m.get("content") or "").lower() for m in messages
+        ):
             payload["response_format"] = {"type": "json_object"}
 
         async with httpx.AsyncClient(timeout=self._endpoint.timeout) as client:
@@ -61,24 +80,33 @@ class MarketAnalyzer:
 
         content = data["choices"][0]["message"]["content"]
         if not isinstance(content, str) or not content.strip():
-            raise ValueError("Empty LLM response content")
-        return content.strip()
+            if require_content:
+                raise ValueError("Empty LLM response content")
+            return ChatResult("")
+        return ChatResult(content=content.strip(), usage=data.get("usage"))
 
     async def ping(self) -> str:
-        """Lightweight LLM reachability check."""
-        reply = await self._chat(
+        """Lightweight LLM reachability check.
+
+        OK = 收到 HTTP 200。推理模型可能把 token 全耗在 reasoning_content，
+        导致 content 为空，此时不应判定为不可达。
+        """
+        result = await self._chat(
             [
                 {"role": "system", "content": "Reply with exactly: ok"},
                 {"role": "user", "content": "ping"},
             ],
-            max_tokens=8,
+            max_tokens=64,
+            require_content=False,
         )
-        return reply.strip()
+        return result.content.strip()
 
-    async def analyze(self, market_data: dict[str, Any]) -> tuple[TradeSignal, str, str]:
+    async def analyze(
+        self, market_data: dict[str, Any]
+    ) -> tuple[TradeSignal, str, str, dict[str, int] | None]:
         """
         Run analysis on market snapshot.
-        Returns (signal, raw_output, prompt_summary).
+        Returns (signal, raw_output, prompt_summary, usage). usage 在调用失败时为 None。
         """
         symbol = market_data.get("symbol") or self._settings.trade_symbol
         user_prompt = build_user_prompt(
@@ -89,26 +117,26 @@ class MarketAnalyzer:
         prompt_summary = summarize_market_for_log(market_data)
 
         try:
-            raw_output = await self._chat(
+            result = await self._chat(
                 [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ]
             )
-            signal = parse_trade_signal(raw_output, default_symbol=symbol)
-            return signal, raw_output, prompt_summary
+            signal = parse_trade_signal(result.content, default_symbol=symbol)
+            return signal, result.content, prompt_summary, result.usage
         except httpx.TimeoutException:
             logger.warning("LLM request timed out, defaulting to HOLD")
             signal = HOLD_ON_FAILURE.model_copy(
                 update={"symbol": symbol, "reason": "LLM 请求超时，降级为 HOLD"}
             )
-            return signal, "", prompt_summary
+            return signal, "", prompt_summary, None
         except Exception as exc:  # noqa: BLE001
             logger.exception("LLM analysis failed: %s", exc)
             signal = HOLD_ON_FAILURE.model_copy(
                 update={"symbol": symbol, "reason": f"LLM 调用失败: {exc}"}
             )
-            return signal, str(exc), prompt_summary
+            return signal, str(exc), prompt_summary, None
 
 
 def parse_trade_signal(raw: str, *, default_symbol: str) -> TradeSignal:

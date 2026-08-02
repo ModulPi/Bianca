@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.storage.database import get_session_factory
@@ -24,6 +24,9 @@ class DecisionRepository:
         prompt_summary: str | None,
         raw_output: str,
         parsed_signal: dict,
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
+        total_tokens: int | None = None,
         session: AsyncSession | None = None,
     ) -> DecisionLog:
         row = DecisionLog(
@@ -32,6 +35,9 @@ class DecisionRepository:
             prompt_summary=prompt_summary,
             raw_output=raw_output,
             parsed_signal=json.dumps(parsed_signal, ensure_ascii=False),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
             created_at=_utc_now(),
         )
         if session is not None:
@@ -72,6 +78,47 @@ class DecisionRepository:
             result = await db.execute(stmt)
             return result.scalar_one_or_none()
 
+    async def usage_summary(self) -> dict[str, dict[str, int]]:
+        """汇总 token 消耗：today（UTC 对齐 created_at）+ total。
+
+        calls 计入全部决策行（含调用失败/超时降级为 HOLD 的）；token 各列
+        仅统计有 usage 的成功调用，用 COALESCE 容错 NULL。
+        """
+        today = datetime.now(UTC).date().isoformat()
+
+        def _agg(where=None):
+            stmt = select(
+                func.count(DecisionLog.id),
+                func.coalesce(func.sum(DecisionLog.prompt_tokens), 0),
+                func.coalesce(func.sum(DecisionLog.completion_tokens), 0),
+                func.coalesce(func.sum(DecisionLog.total_tokens), 0),
+            )
+            if where is not None:
+                stmt = stmt.where(where)
+            return stmt
+
+        factory = get_session_factory()
+        async with factory() as db:
+            total = (await db.execute(_agg())).one()
+            today_row = (
+                await db.execute(_agg(DecisionLog.created_at.startswith(today)))
+            ).one()
+
+        return {
+            "total": {
+                "calls": int(total[0]),
+                "prompt_tokens": int(total[1]),
+                "completion_tokens": int(total[2]),
+                "total_tokens": int(total[3]),
+            },
+            "today": {
+                "calls": int(today_row[0]),
+                "prompt_tokens": int(today_row[1]),
+                "completion_tokens": int(today_row[2]),
+                "total_tokens": int(today_row[3]),
+            },
+        }
+
 
 class TradeRepository:
     async def save_signal(
@@ -101,6 +148,7 @@ class TradeRepository:
             risk_decision=risk_decision,
             risk_reason=risk_reason,
             external_order_id=external_order_id,
+            decision_id=decision_id,
             status=status,
             created_at=_utc_now(),
         )
@@ -143,8 +191,22 @@ class TradeRepository:
                 row.order_type = order_type
             await db.commit()
 
-    async def list_recent(self, limit: int = 50) -> list[TradeLog]:
-        stmt = select(TradeLog).order_by(TradeLog.created_at.desc()).limit(limit)
+    async def list_recent(
+        self,
+        limit: int = 50,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+        status: str | None = None,
+    ) -> list[TradeLog]:
+        stmt = select(TradeLog)
+        if symbol:
+            stmt = stmt.where(TradeLog.symbol == symbol)
+        if side:
+            stmt = stmt.where(TradeLog.side == side.upper())
+        if status:
+            stmt = stmt.where(TradeLog.status == status)
+        stmt = stmt.order_by(TradeLog.created_at.desc()).limit(limit)
         factory = get_session_factory()
         async with factory() as db:
             result = await db.execute(stmt)

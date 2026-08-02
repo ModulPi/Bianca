@@ -11,7 +11,11 @@ def build_binance_config(settings: Settings) -> dict[str, Any]:
         "apiKey": settings.binance_api_key,
         "secret": settings.binance_api_secret,
         "enableRateLimit": True,
-        "options": {"defaultType": "spot"},
+        "options": {
+            "defaultType": "spot",
+            # 只加载现货市场，避免 ccxt 顺带拉取合约/交割端点（demo-dapi 不稳定）
+            "fetchMarkets": {"types": ["spot"]},
+        },
     }
     proxy = settings.binance_proxy.strip()
     if proxy:

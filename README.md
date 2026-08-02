@@ -85,17 +85,19 @@ curl http://127.0.0.1:8000/api/v1/checkpoints/threads/default/history
 ## Web 控制台（M7）
 
 ```bash
-# 终端 1：API
-docker compose up -d --build
+# 开发模式（热更新，/api 代理到 :8000）
+docker compose up -d api
+cd web && npm install && npm run dev
+# http://127.0.0.1:3000
 
-# 终端 2：前端 dev server（代理 /api → :8000）
-cd web
-npm install
-npm run dev
-# 浏览器打开 http://127.0.0.1:3000
+# 生产模式（nginx 静态 + API 反代，Docker 一体）
+docker compose up -d --build
+# Web http://127.0.0.1:3000  ·  API http://127.0.0.1:8000
 ```
 
-页面：仪表盘（会话汇总 + Agent 启停）、交易记录、会话历史、Token 消耗。
+页面：仪表盘（持仓/盈亏曲线/Agent 启停）、交易、会话、决策回放、LLM 决策、风控事件、Token 消耗。
+
+半自动确认（WebSocket + confirm）依赖 M6，当前仅展示执行模式说明。
 
 ## 许可证
 

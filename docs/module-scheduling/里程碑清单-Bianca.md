@@ -25,7 +25,7 @@
 | **M5** | 策略模板 | 网格/DCA/趋势 3 模板可运行 |
 | **M6** | 半自动 + 完整风控 | Web 确认流 + 8 条风控规则 |
 | **M6.5** | 汇总管理 | Summary API + `session_summaries`；Agent 启停自动生成会话快照 | ✅ PoC SQLite 已实现 |
-| **M7** | Web 控制台 | React 前端全功能可用（含汇总仪表盘） | 🚧 PoC 仪表盘已实现 |
+| **M7** | Web 控制台 | React 前端全功能可用（含汇总仪表盘） | ✅ PoC 已实现 |
 | **M8** | MVP 交付 | 模拟门禁 + Telegram 通知 + 合约 API |
 
 ---

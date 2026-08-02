@@ -50,12 +50,17 @@ curl http://127.0.0.1:8000/api/v1/summary/session/latest
 ## Web Console (M7)
 
 ```bash
+# Dev: hot reload
+docker compose up -d api && cd web && npm install && npm run dev
+
+# Prod: nginx + API via Docker Compose
 docker compose up -d --build
-cd web && npm install && npm run dev
-# Open http://127.0.0.1:3000
+# Web http://127.0.0.1:3000
 ```
 
-Pages: dashboard (summary + agent control), trades, sessions, token usage.
+Pages: dashboard (balance, PnL chart, agent control), trades, sessions, checkpoint replay, decisions, risk events, token usage.
+
+Semi-auto confirm requires M6 WebSocket (placeholder banner on dashboard).
 
 ## License
 

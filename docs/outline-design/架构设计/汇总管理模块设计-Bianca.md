@@ -220,7 +220,7 @@ Agent 运行中每 **N 分钟**（默认 15）写 `session_summaries` 中间态�
 - [x] `pnl.realized_usdt` 与手动按成交记录计算误差 < 0.01 USDT
 - [x] `usage.total_tokens` 与 `decision_logs` 聚合一致
 - [x] `loop_closed=true` 当且仅当存在 filled BUY 与 filled SELL
-- [ ] Web 控制台首页展示 Token、盈亏、闭环状态（M7）
+- [x] Web 控制台首页展示 Token、盈亏、闭环状态（M7）
 
 ---
 

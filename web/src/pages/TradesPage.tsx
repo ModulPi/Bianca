@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { api } from "../api/client";
+import PnLChart from "../components/PnLChart";
 import TradesTable from "../components/TradesTable";
 import { usePolling } from "../hooks/usePolling";
 
@@ -45,6 +46,7 @@ export default function TradesPage() {
 
       {loading && !data ? <p className="text-sm text-zinc-500">加载中…</p> : null}
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+      <PnLChart trades={data?.items ?? []} />
       <TradesTable items={data?.items ?? []} />
     </div>
   );

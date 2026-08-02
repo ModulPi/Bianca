@@ -1,10 +1,15 @@
 import type {
   AgentStatus,
   BalanceResponse,
+  CheckpointHistoryResponse,
+  CheckpointThreadListResponse,
+  DecisionListResponse,
   HealthResponse,
   MessageResponse,
+  RiskEventListResponse,
   SessionListResponse,
   SessionSummary,
+  TickerResponse,
   TradeListResponse,
   UsageSummary,
 } from "../types/api";
@@ -53,6 +58,8 @@ export const api = {
   summarySessions: (limit = 20, offset = 0) =>
     request<SessionListResponse>(`/summary/sessions?limit=${limit}&offset=${offset}`),
   summarySession: (id: string) => request<SessionSummary>(`/summary/sessions/${id}`),
+  summaryDaily: (date?: string) =>
+    request<SessionListResponse>(`/summary/daily${date ? `?date=${date}` : ""}`),
 
   trades: (params?: { limit?: number; side?: string; status?: string }) => {
     const q = new URLSearchParams();
@@ -65,6 +72,16 @@ export const api = {
 
   usage: () => request<UsageSummary>("/usage"),
   balance: () => request<BalanceResponse>("/exchange/balance"),
+  ticker: (symbol?: string) =>
+    request<TickerResponse>(`/exchange/ticker${symbol ? `?symbol=${symbol}` : ""}`),
+  decisions: (limit = 50) => request<DecisionListResponse>(`/decisions?limit=${limit}`),
+  riskEvents: (limit = 50) => request<RiskEventListResponse>(`/risk/events?limit=${limit}`),
+  checkpointThreads: (limit = 50) =>
+    request<CheckpointThreadListResponse>(`/checkpoints/threads?limit=${limit}`),
+  checkpointHistory: (threadId: string, limit = 30) =>
+    request<CheckpointHistoryResponse>(
+      `/checkpoints/threads/${encodeURIComponent(threadId)}/history?limit=${limit}`,
+    ),
 };
 
 export { ApiError };

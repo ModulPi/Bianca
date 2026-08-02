@@ -119,3 +119,66 @@ export interface BalanceResponse {
 export interface MessageResponse {
   message: string;
 }
+
+export interface TickerResponse {
+  symbol: string | null;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+  timestamp: number | null;
+}
+
+export interface DecisionLogItem {
+  id: string;
+  model_used: string;
+  prompt_summary: string | null;
+  parsed_signal: Record<string, unknown>;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  created_at: string;
+}
+
+export interface DecisionListResponse {
+  items: DecisionLogItem[];
+  total: number;
+}
+
+export interface RiskEventItem {
+  id: string;
+  event_type: string;
+  detail: Record<string, unknown>;
+  related_trade_id: string | null;
+  created_at: string;
+}
+
+export interface RiskEventListResponse {
+  items: RiskEventItem[];
+  total: number;
+}
+
+export interface CheckpointThreadItem {
+  thread_id: string;
+  checkpoint_count: number;
+  latest_checkpoint_id: string | null;
+}
+
+export interface CheckpointThreadListResponse {
+  items: CheckpointThreadItem[];
+  total: number;
+}
+
+export interface CheckpointStateItem {
+  checkpoint_id: string | null;
+  thread_id: string | null;
+  created_at: string | null;
+  next_nodes: string[];
+  metadata: Record<string, unknown>;
+  state: Record<string, unknown>;
+}
+
+export interface CheckpointHistoryResponse {
+  thread_id: string;
+  items: CheckpointStateItem[];
+  total: number;
+}

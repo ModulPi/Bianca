@@ -4,6 +4,9 @@ const links = [
   { to: "/", label: "仪表盘" },
   { to: "/trades", label: "交易" },
   { to: "/sessions", label: "会话" },
+  { to: "/checkpoints", label: "回放" },
+  { to: "/decisions", label: "决策" },
+  { to: "/risk", label: "风控" },
   { to: "/usage", label: "Token" },
 ];
 
@@ -33,7 +36,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <p className="mt-auto text-xs text-zinc-600">M7 · PoC Dashboard</p>
+        <p className="mt-auto text-xs text-zinc-600">M7 · Web Console</p>
       </aside>
       <main className="flex-1 p-6 overflow-auto">
         <Outlet />

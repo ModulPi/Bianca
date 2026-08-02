@@ -1,20 +1,29 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import PnLChart from "../components/PnLChart";
 import SessionSummaryPanel from "../components/SessionSummaryPanel";
 import TradesTable from "../components/TradesTable";
-import type { SessionSummary } from "../types/api";
+import type { SessionSummary, TradeLogItem } from "../types/api";
 
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState<TradeLogItem[]>([]);
 
   useEffect(() => {
     if (!id) return;
     void api
       .summarySession(id)
-      .then(setSummary)
+      .then((s) => {
+        setSummary(s);
+        const end = s.ended_at ?? new Date().toISOString();
+        return api.trades({ limit: 200 }).then((res) =>
+          res.items.filter((t) => t.created_at >= s.started_at && t.created_at <= end),
+        );
+      })
+      .then(setItems)
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [id]);
 
@@ -27,9 +36,18 @@ export default function SessionDetailPage() {
       {summary ? (
         <>
           <SessionSummaryPanel summary={summary} title="会话详情" />
+          <PnLChart trades={items} />
           <section>
-            <h2 className="mb-3 text-lg font-medium">同期成交（全库最近记录）</h2>
-            <SessionTrades startedAt={summary.started_at} endedAt={summary.ended_at} />
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-medium">同期成交</h2>
+              <Link
+                to={`/checkpoints?thread=${summary.session_id}`}
+                className="text-sm text-amber-400 hover:underline"
+              >
+                查看决策回放 →
+              </Link>
+            </div>
+            <TradesTable items={items} />
           </section>
         </>
       ) : !error ? (
@@ -37,18 +55,4 @@ export default function SessionDetailPage() {
       ) : null}
     </div>
   );
-}
-
-function SessionTrades({ startedAt, endedAt }: { startedAt: string; endedAt: string | null }) {
-  const [items, setItems] = useState<Awaited<ReturnType<typeof api.trades>>["items"]>([]);
-
-  useEffect(() => {
-    void api.trades({ limit: 200 }).then((res) => {
-      const end = endedAt ?? new Date().toISOString();
-      const filtered = res.items.filter((t) => t.created_at >= startedAt && t.created_at <= end);
-      setItems(filtered);
-    });
-  }, [startedAt, endedAt]);
-
-  return <TradesTable items={items} />;
 }

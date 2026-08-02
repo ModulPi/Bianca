@@ -97,3 +97,23 @@ class PendingSignalRow(Base):
 
 
 Index("idx_pending_signals_status", PendingSignalRow.status, PendingSignalRow.expires_at)
+
+
+class StrategyRow(Base):
+    __tablename__ = "strategies"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    market: Mapped[str] = mapped_column(String, nullable=False, default="spot")
+    execution_mode: Mapped[str] = mapped_column(String, nullable=False, default="auto")
+    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    state_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="created")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    stopped_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+Index("idx_strategies_status", StrategyRow.status)

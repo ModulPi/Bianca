@@ -11,6 +11,9 @@ import type {
   RiskEventListResponse,
   SessionListResponse,
   SessionSummary,
+  StrategyListResponse,
+  StrategyItem,
+  StrategyTickResponse,
   TickerResponse,
   TradeListResponse,
   UsageSummary,
@@ -91,6 +94,21 @@ export const api = {
     request<ConfirmPendingResponse>(`/pending-signals/${id}/confirm`, { method: "POST" }),
   rejectPending: (id: string) =>
     request<MessageResponse>(`/pending-signals/${id}/reject`, { method: "POST" }),
+
+  strategies: (limit = 50) => request<StrategyListResponse>(`/strategies?limit=${limit}`),
+  createStrategy: (body: {
+    name: string;
+    type: string;
+    execution_mode?: string;
+    market?: string;
+    params?: Record<string, unknown>;
+  }) => request<StrategyItem>("/strategies", { method: "POST", body: JSON.stringify(body) }),
+  startStrategy: (id: string) =>
+    request<StrategyItem>(`/strategies/${id}/start`, { method: "POST" }),
+  stopStrategy: (id: string) =>
+    request<StrategyItem>(`/strategies/${id}/stop`, { method: "POST" }),
+  tickStrategy: (id: string) =>
+    request<StrategyTickResponse>(`/strategies/${id}/tick`, { method: "POST" }),
 };
 
 export { ApiError };

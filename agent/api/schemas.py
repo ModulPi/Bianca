@@ -256,3 +256,45 @@ class ConfirmPendingResponse(BaseModel):
     status: str
     message: str | None = None
     trade_log_id: str | None = None
+
+
+class StrategyCreateRequest(BaseModel):
+    name: str
+    type: str
+    market: str = "spot"
+    execution_mode: str = "auto"
+    params: dict | None = None
+
+
+class StrategyUpdateRequest(BaseModel):
+    name: str | None = None
+    execution_mode: str | None = None
+    params: dict | None = None
+
+
+class StrategyItem(BaseModel):
+    id: str
+    name: str
+    type: str
+    market: str
+    execution_mode: str
+    params: dict
+    state: dict
+    status: str
+    created_at: str
+    updated_at: str
+    started_at: str | None = None
+    stopped_at: str | None = None
+
+
+class StrategyListResponse(BaseModel):
+    items: list[StrategyItem]
+    total: int
+
+
+class StrategyTickResponse(BaseModel):
+    status: str
+    signal: dict | None = None
+    reason: str | None = None
+    trade_log_id: str | None = None
+    pending_signal_id: str | None = None

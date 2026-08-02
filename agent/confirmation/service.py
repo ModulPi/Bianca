@@ -19,6 +19,7 @@ async def queue_pending_signal(
     *,
     settings: Settings | None = None,
     session_id: str | None = None,
+    strategy_id: str | None = None,
 ) -> TradeState:
     cfg = settings or get_settings()
     signal = state.get("llm_signal") or {}
@@ -30,6 +31,7 @@ async def queue_pending_signal(
         decision_id=state.get("decision_id"),
         session_id=session_id,
         ttl_minutes=cfg.pending_signal_ttl_minutes,
+        strategy_id=strategy_id,
     )
     payload = {
         "type": "confirmation_required",
@@ -37,6 +39,7 @@ async def queue_pending_signal(
         "signal": signal,
         "expires_at": row.expires_at,
         "session_id": session_id,
+        "strategy_id": strategy_id,
     }
     await ws_manager.broadcast(payload)
     return {

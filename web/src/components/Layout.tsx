@@ -4,6 +4,7 @@ const links = [
   { to: "/", label: "仪表盘" },
   { to: "/trades", label: "交易" },
   { to: "/sessions", label: "会话" },
+  { to: "/strategies", label: "策略" },
   { to: "/checkpoints", label: "回放" },
   { to: "/decisions", label: "决策" },
   { to: "/risk", label: "风控" },

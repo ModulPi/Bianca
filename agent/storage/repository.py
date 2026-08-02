@@ -14,6 +14,7 @@ from agent.storage.models import (
     PendingSignalRow,
     RiskEvent,
     SessionSummaryRow,
+    StrategyRow,
     TradeLog,
 )
 
@@ -495,3 +496,97 @@ class PendingSignalRepository:
                 row.status = "expired"
             await db.commit()
             return len(rows)
+
+
+class StrategyRepository:
+    async def create(
+        self,
+        *,
+        name: str,
+        strategy_type: str,
+        execution_mode: str,
+        params: dict,
+        market: str = "spot",
+    ) -> StrategyRow:
+        sid = str(uuid.uuid4())
+        now = _utc_now()
+        row = StrategyRow(
+            id=sid,
+            name=name,
+            type=strategy_type,
+            market=market,
+            execution_mode=execution_mode,
+            params_json=json.dumps(params, ensure_ascii=False),
+            state_json="{}",
+            status="created",
+            created_at=now,
+            updated_at=now,
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def get_by_id(self, strategy_id: str) -> StrategyRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(StrategyRow, strategy_id)
+
+    async def list_all(self, limit: int = 50) -> list[StrategyRow]:
+        stmt = select(StrategyRow).order_by(StrategyRow.updated_at.desc()).limit(limit)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def list_running(self) -> list[StrategyRow]:
+        stmt = select(StrategyRow).where(StrategyRow.status == "running")
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def update(
+        self,
+        strategy_id: str,
+        *,
+        name: str | None = None,
+        params: dict | None = None,
+        execution_mode: str | None = None,
+        status: str | None = None,
+        started_at: str | None = None,
+        stopped_at: str | None = None,
+    ) -> StrategyRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(StrategyRow, strategy_id)
+            if row is None:
+                return None
+            if name is not None:
+                row.name = name
+            if params is not None:
+                row.params_json = json.dumps(params, ensure_ascii=False)
+            if execution_mode is not None:
+                row.execution_mode = execution_mode
+            if status is not None:
+                row.status = status
+            if started_at is not None:
+                row.started_at = started_at
+            if stopped_at is not None:
+                row.stopped_at = stopped_at
+            row.updated_at = _utc_now()
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def update_state(self, strategy_id: str, state: dict) -> None:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(StrategyRow, strategy_id)
+            if row is None:
+                return
+            row.state_json = json.dumps(state, ensure_ascii=False)
+            row.updated_at = _utc_now()
+            await db.commit()

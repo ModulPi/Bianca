@@ -78,4 +78,21 @@ CREATE TABLE IF NOT EXISTS pending_signals (
 
 CREATE INDEX IF NOT EXISTS idx_pending_signals_status ON pending_signals(status, expires_at);
 
+CREATE TABLE IF NOT EXISTS strategies (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    type              TEXT NOT NULL CHECK (type IN ('grid', 'dca', 'trend')),
+    market            TEXT NOT NULL DEFAULT 'spot',
+    execution_mode    TEXT NOT NULL DEFAULT 'auto',
+    params_json       TEXT NOT NULL DEFAULT '{}',
+    state_json        TEXT NOT NULL DEFAULT '{}',
+    status            TEXT NOT NULL DEFAULT 'created',
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    started_at        TEXT,
+    stopped_at        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_strategies_status ON strategies(status);
+
 COMMIT;

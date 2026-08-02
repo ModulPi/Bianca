@@ -205,3 +205,31 @@ export interface PendingSignalListResponse {
   items: PendingSignalItem[];
   total: number;
 }
+
+export interface StrategyItem {
+  id: string;
+  name: string;
+  type: string;
+  market: string;
+  execution_mode: string;
+  params: Record<string, unknown>;
+  state: Record<string, unknown>;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  stopped_at?: string | null;
+}
+
+export interface StrategyListResponse {
+  items: StrategyItem[];
+  total: number;
+}
+
+export interface StrategyTickResponse {
+  status: string;
+  signal?: Record<string, unknown>;
+  reason?: string | null;
+  trade_log_id?: string | null;
+  pending_signal_id?: string | null;
+}

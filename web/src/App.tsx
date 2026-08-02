@@ -7,6 +7,7 @@ import DecisionsPage from "./pages/DecisionsPage";
 import RiskPage from "./pages/RiskPage";
 import SessionDetailPage from "./pages/SessionDetailPage";
 import SessionsPage from "./pages/SessionsPage";
+import StrategiesPage from "./pages/StrategiesPage";
 import TradesPage from "./pages/TradesPage";
 import UsagePage from "./pages/UsagePage";
 
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="trades" element={<TradesPage />} />
         <Route path="sessions" element={<SessionsPage />} />
         <Route path="sessions/:id" element={<SessionDetailPage />} />
+        <Route path="strategies" element={<StrategiesPage />} />
         <Route path="usage" element={<UsagePage />} />
         <Route path="decisions" element={<DecisionsPage />} />
         <Route path="risk" element={<RiskPage />} />

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.config import Settings, get_settings
-from agent.exchange.spot_demo import SpotDemoExchange
+from agent.exchange.spot_demo import SpotDemoExchange, resolve_market_symbol
 from agent.graph.state import TradeState
 from agent.storage.repository import AgentConfigRepository, TradeRepository
 
@@ -80,16 +80,17 @@ async def _place_market_order(
     market_data: dict[str, Any],
 ) -> dict[str, Any]:
     exchange = demo.exchange
+    sym = resolve_market_symbol(exchange, symbol)
     if side == "buy":
         return await exchange.create_order(
-            symbol,
+            sym,
             "market",
             "buy",
             None,
             None,
             {"quoteOrderQty": amount},
         )
-    return await exchange.create_market_order(side, amount, symbol)
+    return await exchange.create_order(sym, "market", "sell", amount)
 
 
 async def _update_daily_pnl(

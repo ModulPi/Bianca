@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.graph.analysis_agent import should_auto_execute
+from agent.graph.analysis_agent import apply_aggressive_nudge, should_auto_execute
 from agent.llm.analyzer import parse_trade_signal
 from agent.llm.schemas import TradeSignal
 from agent.main import app
@@ -58,6 +58,43 @@ def test_should_auto_execute_respects_flag():
     assert should_auto_execute(buy, Cfg()) is True
     assert should_auto_execute(hold, Cfg()) is False
     assert should_auto_execute(buy, CfgOff()) is False
+
+
+def test_aggressive_nudge_buy_when_usdt_available():
+    class Cfg:
+        trading_style = "aggressive"
+        trade_symbol = "BTCUSDT"
+        poc_min_trade_usdt = 10.0
+        max_trade_amount = 30.0
+
+    hold = TradeSignal(action="HOLD", symbol="BTCUSDT", amount=None, confidence=0.5, reason="wait")
+    market = {
+        "symbol": "BTCUSDT",
+        "last": 65000.0,
+        "balance": {"free": {"USDT": 100.0, "BTC": 0.0}},
+    }
+    out = apply_aggressive_nudge(hold, market, Cfg())
+    assert out.action == "BUY"
+    assert out.amount is not None
+    assert out.amount >= 10.0
+
+
+def test_aggressive_nudge_sell_when_holding_base():
+    class Cfg:
+        trading_style = "aggressive"
+        trade_symbol = "BTCUSDT"
+        poc_min_trade_usdt = 10.0
+        max_trade_amount = 30.0
+
+    hold = TradeSignal(action="HOLD", symbol="BTCUSDT", amount=None, confidence=0.5, reason="wait")
+    market = {
+        "symbol": "BTCUSDT",
+        "last": 65000.0,
+        "balance": {"free": {"USDT": 5.0, "BTC": 0.001}},
+    }
+    out = apply_aggressive_nudge(hold, market, Cfg())
+    assert out.action == "SELL"
+    assert out.amount == 0.001
 
 
 @pytest.mark.asyncio

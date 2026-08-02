@@ -53,7 +53,7 @@ class MaxTradeAmountRule:
             if price:
                 notional = float(amount) * float(price)
 
-        if notional > max_usdt:
+        if notional > max_usdt + 0.01:
             return RiskVerdict(
                 approved=False,
                 reason=f"单笔名义金额 {notional:.2f} USDT 超过上限 {max_usdt:.2f}",

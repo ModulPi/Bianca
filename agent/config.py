@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Agent
     agent_tick_interval: int = Field(default=300, ge=10)
     trade_symbol: str = "BTCUSDT"
+    # conservative | aggressive — PoC 激进模式优先完成买卖闭环（模拟盘）
+    trading_style: Literal["conservative", "aggressive"] = "conservative"
+    poc_min_trade_usdt: float = Field(default=10.0, gt=0)
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/bianca.db"

@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from agent.config import Settings, get_settings
-from agent.llm.prompts import SYSTEM_PROMPT, build_user_prompt, summarize_market_for_log
+from agent.llm.prompts import build_user_prompt, get_system_prompt, summarize_market_for_log
 from agent.llm.provider import LLMEndpoint, resolve_llm_endpoint
 from agent.llm.schemas import TradeSignal
 
@@ -113,13 +113,15 @@ class MarketAnalyzer:
             market_data,
             max_trade_amount=self._settings.max_trade_amount,
             trade_symbol=self._settings.trade_symbol,
+            trading_style=self._settings.trading_style,
+            min_trade_usdt=self._settings.poc_min_trade_usdt,
         )
         prompt_summary = summarize_market_for_log(market_data)
 
         try:
             result = await self._chat(
                 [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": get_system_prompt(self._settings)},
                     {"role": "user", "content": user_prompt},
                 ]
             )

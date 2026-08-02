@@ -9,6 +9,19 @@ from agent.config import Settings, get_settings
 from agent.exchange._client import build_binance_config, format_binance_error
 
 
+def resolve_market_symbol(exchange: ccxt.binance, symbol: str) -> str:
+    """BTCUSDT → ccxt unified BTC/USDT (required for create_order)."""
+    if symbol in exchange.markets:
+        return symbol
+    compact = symbol.upper().replace("/", "")
+    for market in exchange.markets.values():
+        if market.get("id") == compact or market.get("symbol", "").replace("/", "") == compact:
+            return market["symbol"]
+    if compact.endswith("USDT"):
+        return f"{compact[:-4]}/USDT"
+    return symbol
+
+
 class SpotDemoExchange:
     """ccxt wrapper for Binance Demo spot trading."""
 
@@ -50,7 +63,8 @@ class SpotDemoExchange:
         amount: float,
         symbol: str | None = None,
     ) -> dict[str, Any]:
-        sym = symbol or self._settings.trade_symbol
+        raw = symbol or self._settings.trade_symbol
+        sym = resolve_market_symbol(self.exchange, raw)
         return await self.exchange.create_order(sym, "market", side, amount)
 
     async def create_limit_order(

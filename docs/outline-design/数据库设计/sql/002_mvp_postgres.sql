@@ -108,6 +108,26 @@ CREATE TABLE analysis_reports (
 CREATE INDEX idx_analysis_reports_time ON analysis_reports(created_at DESC);
 
 -- ============================================================
+-- 5.1 会话汇总表（汇总管理模块，见 汇总管理模块设计-Bianca.md）
+-- ============================================================
+CREATE TABLE session_summaries (
+    id              UUID            PRIMARY KEY,
+    started_at      TIMESTAMPTZ     NOT NULL,
+    ended_at        TIMESTAMPTZ,
+    tick_count      INTEGER         NOT NULL DEFAULT 0,
+    trading_style   TEXT            NOT NULL DEFAULT 'conservative',
+    usage_json      JSONB           NOT NULL DEFAULT '{}',
+    trades_json     JSONB           NOT NULL DEFAULT '{}',
+    pnl_json        JSONB           NOT NULL DEFAULT '{}',
+    positions_json  JSONB           NOT NULL DEFAULT '{}',
+    loop_closed     BOOLEAN         NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_session_summaries_started ON session_summaries(started_at DESC);
+CREATE INDEX idx_session_summaries_loop    ON session_summaries(loop_closed) WHERE loop_closed = TRUE;
+
+-- ============================================================
 -- 6. K线数据表 (TimescaleDB Hypertable)
 -- ============================================================
 CREATE TABLE klines (

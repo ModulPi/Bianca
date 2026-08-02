@@ -111,8 +111,11 @@ GET    /agent/status              # {running, last_tick, daily_pnl}
 GET    /trades                    # 交易记录列表
 GET    /trades/{id}               # 单笔详情
 GET    /decisions                 # LLM 决策日志
+GET    /usage                     # Token 消耗汇总（today + total）
 GET    /risk/events               # 风控事件
 ```
+
+MVP 新增 `/summary/*` 会话汇总，见《汇总管理模块设计-Bianca.md》。
 
 ---
 
@@ -212,9 +215,10 @@ services:
 | 数据 | PostgreSQL + TimescaleDB + Redis |
 | 通知 | Telegram Bot |
 | 安全 | API Token 鉴权 |
-| API | + `/strategies/*`, `/ws/market`, `/ws/system`, confirm 端点 |
+| 汇总 | Summary Service；`session_summaries`；`/summary/*` |
+| API | + `/strategies/*`, `/summary/*`, `/ws/market`, `/ws/system`, confirm 端点 |
 
-详细 MVP 设计保留在原 v1.0 模块设计中，PoC 验收后按需启用。
+详细设计见《汇总管理模块设计-Bianca.md》；其余 MVP 模块保留在原 v1.0 模块设计中，PoC 验收后按需启用。
 
 ---
 

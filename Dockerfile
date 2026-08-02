@@ -5,7 +5,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md start_poc.py run_poc_closure.py ./
 COPY agent ./agent
 
 RUN pip install --no-cache-dir --upgrade pip && \

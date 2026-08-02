@@ -87,6 +87,7 @@ PoC 验收后迁移至 PostgreSQL，新增/恢复以下表：
 | `pending_signals` | 半自动待确认信号 |
 | `paper_validations` | 模拟验证记录（模拟→实盘门禁） |
 | `analysis_reports` | LLM 分析报告 |
+| `session_summaries` | Agent 会话汇总快照（Token + 成交 + 盈亏） |
 | `klines` | TimescaleDB 超表（K 线时序） |
 | `api_keys` | AES-256 加密存储（替代 .env 明文） |
 

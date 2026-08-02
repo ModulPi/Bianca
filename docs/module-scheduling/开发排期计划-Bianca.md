@@ -97,6 +97,7 @@ P0(2d) → P1(2d) → P2(3d) → P3(3d) → P4(2d) = 12d
 | M0 | PostgreSQL + TimescaleDB + Redis 迁移 | 3d | 基础设施升级 |
 | M1 | 策略模板引擎（grid/dca/trend） | 5d | 规则策略 |
 | M2 | 完整风控 8 条 + 半自动确认 API | 4d | 风控 + 半自动 |
+| M2.5 | 汇总管理模块（Summary API + session_summaries） | 2d | 可观测性 |
 | M3 | 合约 API + 模拟→实盘门禁 | 4d | 全品种 |
 | M4 | React Web 控制台 | 7d | Web 上线 |
 | M5 | 测试 + Telegram 通知 | 2d | MVP 交付 |

@@ -12,6 +12,7 @@ from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_age
 from agent.graph.execute_agent import run_execute_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
+from agent.llm.prompts import normalize_symbol
 from agent.storage.repository import TradeRepository
 
 
@@ -25,13 +26,16 @@ async def fetch_market_node(state: TradeState) -> TradeState:
 
     async with SpotDemoExchange(settings) as demo:
         ticker = await demo.fetch_ticker(settings.trade_symbol)
+        balance = await demo.fetch_balance()
 
+    free = {k: float(v) for k, v in balance.get("free", {}).items() if v}
     market_data = {
-        "symbol": ticker.get("symbol", settings.trade_symbol),
+        "symbol": normalize_symbol(ticker.get("symbol", settings.trade_symbol)),
         "last": ticker.get("last"),
         "bid": ticker.get("bid"),
         "ask": ticker.get("ask"),
         "timestamp": ticker.get("timestamp"),
+        "balance": {"free": free},
     }
     return {**state, "market_data": market_data}
 

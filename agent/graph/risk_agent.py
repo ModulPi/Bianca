@@ -20,7 +20,7 @@ async def run_risk_agent(state: TradeState, *, settings: Settings | None = None)
 
     trade_repo = TradeRepository()
     risk_repo = RiskEventRepository()
-    trade_id = state.get("trade_log_id") or str(uuid.uuid4())
+    trade_id = str(uuid.uuid4())
 
     risk_decision = "approved" if verdict.approved else "rejected"
     await trade_repo.save_signal(

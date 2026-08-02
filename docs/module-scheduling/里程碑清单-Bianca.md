@@ -39,3 +39,5 @@
 - [x] 每条记录含 `decision_reason`（LLM 理由）和 `risk_decision`
 - [x] `LLM_AUTO_EXECUTE=false` 时只记录信号不下单（单元测试覆盖）
 - [x] 日亏损超限时 Agent 拒绝新单（单元测试覆盖）
+- [x] Checkpointer 可回放（`GET /api/v1/checkpoints/threads/{id}/history`）
+- [x] 买卖闭环后 Agent 自动 stop（`loop_closed=true`）

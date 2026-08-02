@@ -121,17 +121,42 @@ class AgentRunner:
 
     async def _run_one_tick(self, settings: Settings) -> None:
         try:
-            result = await run_agent_tick(settings=settings)
+            result = await run_agent_tick(
+                settings=settings,
+                thread_id=self._snapshot.session_id or "default",
+            )
             self._snapshot.last_tick = datetime.now(UTC).isoformat()
             self._snapshot.last_status = result.get("status")
             self._snapshot.last_error = None
             self._snapshot.tick_count += 1
             logger.info("Agent tick #%s status=%s", self._snapshot.tick_count, self._snapshot.last_status)
+            await self._maybe_stop_on_loop_closed(settings)
         except Exception as exc:  # noqa: BLE001 — keep loop alive
             logger.exception("Agent tick failed")
             self._snapshot.last_tick = datetime.now(UTC).isoformat()
             self._snapshot.last_error = str(exc)
             self._snapshot.tick_count += 1
+
+    async def _maybe_stop_on_loop_closed(self, settings: Settings) -> None:
+        if not self._snapshot.session_id or not self._snapshot.session_started_at:
+            return
+        from agent.summary.aggregator import build_session_summary
+
+        try:
+            summary = await build_session_summary(
+                session_id=self._snapshot.session_id,
+                started_at=self._snapshot.session_started_at,
+                ended_at=None,
+                tick_count=self._snapshot.tick_count,
+                last_status=self._snapshot.last_status,
+                settings=settings,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to evaluate loop closure")
+            return
+        if summary["trades"].get("loop_closed"):
+            logger.info("PoC loop closed (>=1 BUY + >=1 SELL filled), stopping agent")
+            self._stop_event.set()
 
 
 _runner: AgentRunner | None = None

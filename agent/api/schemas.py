@@ -207,3 +207,29 @@ class SessionSummaryResponse(BaseModel):
 class SessionListResponse(BaseModel):
     items: list[SessionSummaryResponse]
     total: int
+
+
+class CheckpointThreadItem(BaseModel):
+    thread_id: str
+    checkpoint_count: int
+    latest_checkpoint_id: str | None = None
+
+
+class CheckpointThreadListResponse(BaseModel):
+    items: list[CheckpointThreadItem]
+    total: int
+
+
+class CheckpointStateItem(BaseModel):
+    checkpoint_id: str | None = None
+    thread_id: str | None = None
+    created_at: str | None = None
+    next_nodes: list[str] = []
+    metadata: dict = {}
+    state: dict = {}
+
+
+class CheckpointHistoryResponse(BaseModel):
+    thread_id: str
+    items: list[CheckpointStateItem]
+    total: int

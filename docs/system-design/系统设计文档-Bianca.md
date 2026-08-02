@@ -113,9 +113,21 @@ GET    /trades/{id}               # 单笔详情
 GET    /decisions                 # LLM 决策日志
 GET    /usage                     # Token 消耗汇总（today + total）
 GET    /risk/events               # 风控事件
+GET    /summary/session/current   # 当前会话汇总（运行中）
+GET    /summary/session/latest    # 最近一次已关闭会话汇总
+GET    /summary/sessions          # 历史会话列表
+GET    /summary/sessions/{id}     # 指定会话汇总
+GET    /summary/daily             # 按日汇总
+POST   /summary/sessions/{id}/close  # 手动关闭当前会话并落库
+GET    /checkpoints/threads       # Checkpointer 线程列表
+GET    /checkpoints/threads/{id}/history  # 决策链路回放
+GET    /exchange/balance          # Demo 账户余额
+GET    /exchange/ticker           # 实时 ticker
+POST   /analysis/run              # 单次 LLM 分析（调试）
+POST   /agent/tick                # 手动触发单次 tick
 ```
 
-MVP 新增 `/summary/*` 会话汇总，见《汇总管理模块设计-Bianca.md》。
+会话汇总详见《汇总管理模块设计-Bianca.md》。Checkpointer 数据存于 `data/checkpoints.sqlite`，Agent 每次启停使用独立 `thread_id`（等于 `session_id`）。
 
 ---
 

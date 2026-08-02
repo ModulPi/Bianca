@@ -77,6 +77,7 @@ python run_poc_closure.py
 curl http://127.0.0.1:8000/api/v1/usage
 curl http://127.0.0.1:8000/api/v1/trades
 curl http://127.0.0.1:8000/api/v1/summary/session/latest
+curl http://127.0.0.1:8000/api/v1/checkpoints/threads/default/history
 ```
 
 **切换本地 Ollama：** 修改 `.env` 中 `LLM_PROVIDER=ollama` 及相关 URL/模型，重启 API 即可。

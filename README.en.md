@@ -28,13 +28,21 @@ On Binance Demo spot, the LLM autonomously analyzes market data, produces buy/se
 | Database | SQLite | PostgreSQL + TimescaleDB |
 | Frontend | — | React + TypeScript |
 
-## Quick Start (PoC, pending implementation)
+## Quick Start (PoC)
 
 ```bash
 cp .env.example .env
-# Set LLM_PROVIDER=deepseek, LLM_API_KEY=sk-xxx
-docker compose up api
+# Set BINANCE_API_KEY/SECRET, LLM_API_KEY, BINANCE_PROXY if needed
+
+docker compose up -d --build
+python start_poc.py
+
+# Or step by step:
+curl http://127.0.0.1:8000/api/v1/health
 curl -X POST http://127.0.0.1:8000/api/v1/agent/start
+python run_poc_closure.py
+
+curl http://127.0.0.1:8000/api/v1/summary/session/latest
 ```
 
 **Switch to local Ollama:** set `LLM_PROVIDER=ollama` in `.env` and restart the API.

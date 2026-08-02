@@ -24,7 +24,7 @@
 | **M4** | 基础设施升级 | PG + TimescaleDB + Redis 迁移完成 |
 | **M5** | 策略模板 | 网格/DCA/趋势 3 模板可运行 |
 | **M6** | 半自动 + 完整风控 | Web 确认流 + 8 条风控规则 |
-| **M6.5** | 汇总管理 | Summary API + `session_summaries`；Agent 启停自动生成会话快照 |
+| **M6.5** | 汇总管理 | Summary API + `session_summaries`；Agent 启停自动生成会话快照 | ✅ PoC SQLite 已实现 |
 | **M7** | Web 控制台 | React 前端全功能可用（含汇总仪表盘） |
 | **M8** | MVP 交付 | 模拟门禁 + Telegram 通知 + 合约 API |
 
@@ -32,10 +32,10 @@
 
 ## 验收检查表（PoC M3）
 
-- [ ] `docker compose up api` 成功，绑定 `127.0.0.1:8000`
-- [ ] Ollama 在宿主机运行，API 容器可访问（`LLM_PROVIDER=ollama` 时）
-- [ ] `POST /api/v1/agent/start` 启动 Agent
-- [ ] `trade_logs` 表有 ≥1 BUY + ≥1 SELL，`status=filled`
-- [ ] 每条记录含 `decision_reason`（LLM 理由）和 `risk_decision`
-- [ ] `LLM_AUTO_EXECUTE=false` 时只记录信号不下单
-- [ ] 日亏损超限时 Agent 拒绝新单
+- [x] `docker compose up api` 成功，绑定 `127.0.0.1:8000`
+- [ ] Ollama 在宿主机运行，API 容器可访问（`LLM_PROVIDER=ollama` 时，待冒烟）
+- [x] `POST /api/v1/agent/start` 启动 Agent
+- [x] `trade_logs` 表有 ≥1 BUY + ≥1 SELL，`status=filled`
+- [x] 每条记录含 `decision_reason`（LLM 理由）和 `risk_decision`
+- [x] `LLM_AUTO_EXECUTE=false` 时只记录信号不下单（单元测试覆盖）
+- [x] 日亏损超限时 Agent 拒绝新单（单元测试覆盖）

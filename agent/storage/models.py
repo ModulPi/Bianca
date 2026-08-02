@@ -61,3 +61,22 @@ class AgentConfigRow(Base):
 
     key: Mapped[str] = mapped_column(String, primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class SessionSummaryRow(Base):
+    __tablename__ = "session_summaries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    started_at: Mapped[str] = mapped_column(String, nullable=False)
+    ended_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    tick_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trading_style: Mapped[str] = mapped_column(String, nullable=False, default="conservative")
+    usage_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    trades_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    pnl_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    positions_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    loop_closed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_session_summaries_started", SessionSummaryRow.started_at.desc())

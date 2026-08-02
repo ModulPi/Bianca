@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.storage.database import get_session_factory
-from agent.storage.models import AgentConfigRow, DecisionLog, RiskEvent, TradeLog
+from agent.storage.models import AgentConfigRow, DecisionLog, RiskEvent, SessionSummaryRow, TradeLog
 
 
 def _utc_now() -> str:
@@ -77,6 +77,31 @@ class DecisionRepository:
         async with factory() as db:
             result = await db.execute(stmt)
             return result.scalar_one_or_none()
+
+    async def list_since(
+        self,
+        started_at: str,
+        ended_at: str | None = None,
+    ) -> list[DecisionLog]:
+        stmt = select(DecisionLog).where(DecisionLog.created_at >= started_at)
+        if ended_at:
+            stmt = stmt.where(DecisionLog.created_at <= ended_at)
+        stmt = stmt.order_by(DecisionLog.created_at.asc())
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def usage_summary_in_window(
+        self, started_at: str, ended_at: str | None = None
+    ) -> dict[str, int]:
+        rows = await self.list_since(started_at, ended_at)
+        return {
+            "calls": len(rows),
+            "prompt_tokens": sum(r.prompt_tokens or 0 for r in rows),
+            "completion_tokens": sum(r.completion_tokens or 0 for r in rows),
+            "total_tokens": sum(r.total_tokens or 0 for r in rows),
+        }
 
     async def usage_summary(self) -> dict[str, dict[str, int]]:
         """汇总 token 消耗：today（UTC 对齐 created_at）+ total。
@@ -212,6 +237,20 @@ class TradeRepository:
             result = await db.execute(stmt)
             return list(result.scalars().all())
 
+    async def list_since(
+        self,
+        started_at: str,
+        ended_at: str | None = None,
+    ) -> list[TradeLog]:
+        stmt = select(TradeLog).where(TradeLog.created_at >= started_at)
+        if ended_at:
+            stmt = stmt.where(TradeLog.created_at <= ended_at)
+        stmt = stmt.order_by(TradeLog.created_at.asc())
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
     async def get_by_id(self, trade_id: str) -> TradeLog | None:
         factory = get_session_factory()
         async with factory() as db:
@@ -287,3 +326,67 @@ class AgentConfigRepository:
         today = datetime.now(UTC).date().isoformat()
         await self._set_row(self._PNL_DATE_KEY, today)
         await self._set_row(self._PNL_KEY, str(pnl))
+
+
+class SessionSummaryRepository:
+    async def save(
+        self,
+        *,
+        session_id: str,
+        started_at: str,
+        ended_at: str | None,
+        tick_count: int,
+        trading_style: str,
+        usage_json: dict,
+        trades_json: dict,
+        pnl_json: dict,
+        positions_json: dict,
+        loop_closed: bool,
+    ) -> SessionSummaryRow:
+        row = SessionSummaryRow(
+            id=session_id,
+            started_at=started_at,
+            ended_at=ended_at,
+            tick_count=tick_count,
+            trading_style=trading_style,
+            usage_json=json.dumps(usage_json, ensure_ascii=False),
+            trades_json=json.dumps(trades_json, ensure_ascii=False),
+            pnl_json=json.dumps(pnl_json, ensure_ascii=False),
+            positions_json=json.dumps(positions_json, ensure_ascii=False),
+            loop_closed=1 if loop_closed else 0,
+            created_at=_utc_now(),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def get_by_id(self, session_id: str) -> SessionSummaryRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(SessionSummaryRow, session_id)
+
+    async def list_recent(self, limit: int = 20, offset: int = 0) -> list[SessionSummaryRow]:
+        stmt = (
+            select(SessionSummaryRow)
+            .order_by(SessionSummaryRow.started_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_latest(self) -> SessionSummaryRow | None:
+        stmt = (
+            select(SessionSummaryRow)
+            .order_by(SessionSummaryRow.created_at.desc())
+            .limit(1)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return result.scalar_one_or_none()

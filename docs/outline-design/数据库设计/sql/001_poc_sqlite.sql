@@ -48,4 +48,20 @@ CREATE TABLE IF NOT EXISTS agent_config (
     value             TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS session_summaries (
+    id                TEXT PRIMARY KEY,
+    started_at        TEXT NOT NULL,
+    ended_at          TEXT,
+    tick_count        INTEGER NOT NULL DEFAULT 0,
+    trading_style     TEXT NOT NULL DEFAULT 'conservative',
+    usage_json        TEXT NOT NULL DEFAULT '{}',
+    trades_json       TEXT NOT NULL DEFAULT '{}',
+    pnl_json          TEXT NOT NULL DEFAULT '{}',
+    positions_json    TEXT NOT NULL DEFAULT '{}',
+    loop_closed       INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_summaries_started ON session_summaries(started_at DESC);
+
 COMMIT;

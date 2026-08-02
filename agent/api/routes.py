@@ -82,6 +82,8 @@ async def agent_status() -> AgentStatusResponse:
         daily_pnl=snap.daily_pnl,
         tick_interval=snap.tick_interval,
         llm_auto_execute=snap.llm_auto_execute,
+        session_id=snap.session_id,
+        session_started_at=snap.session_started_at,
     )
 
 

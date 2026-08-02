@@ -53,18 +53,30 @@ docs/
     └── 资源分配建议-Bianca.md
 ```
 
-## 快速开始（PoC，待实现）
+## 快速开始（PoC）
 
 ```bash
-# 1. 配置环境变量（默认 DeepSeek）
+# 1. 配置环境变量
 cp .env.example .env
-# 编辑 .env：LLM_PROVIDER=deepseek, LLM_API_KEY=sk-xxx
+# 编辑 .env：BINANCE_API_KEY/SECRET、LLM_API_KEY、BINANCE_PROXY（如需）
 
-# 2. 启动 API
-docker compose up api
+# 2. 启动 API（Docker）
+docker compose up -d --build
 
-# 3. 启动 Agent
+# 3. 一键启动 Agent 并等待健康检查
+python start_poc.py
+
+# 或分步：
+curl http://127.0.0.1:8000/api/v1/health
 curl -X POST http://127.0.0.1:8000/api/v1/agent/start
+
+# 4. 等待买卖闭环（可选）
+python run_poc_closure.py
+
+# 5. 查看汇总
+curl http://127.0.0.1:8000/api/v1/usage
+curl http://127.0.0.1:8000/api/v1/trades
+curl http://127.0.0.1:8000/api/v1/summary/session/latest
 ```
 
 **切换本地 Ollama：** 修改 `.env` 中 `LLM_PROVIDER=ollama` 及相关 URL/模型，重启 API 即可。

@@ -20,6 +20,8 @@ class AgentStatusResponse(BaseModel):
     daily_pnl: float = 0.0
     tick_interval: int = 300
     llm_auto_execute: bool = True
+    session_id: str | None = None
+    session_started_at: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -150,3 +152,58 @@ class UsageBucket(BaseModel):
 class UsageSummaryResponse(BaseModel):
     today: UsageBucket
     total: UsageBucket
+
+
+class SessionAgentInfo(BaseModel):
+    tick_count: int
+    tick_interval_sec: int | None = None
+    trading_style: str
+    last_status: str | None = None
+
+
+class SessionUsageInfo(BaseModel):
+    llm_calls: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float = 0.0
+
+
+class SessionTradesInfo(BaseModel):
+    buy_filled: int
+    sell_filled: int
+    failed: int
+    signal_only: int
+    loop_closed: bool
+
+
+class SessionPnLInfo(BaseModel):
+    cash_flow_usdt: float
+    realized_usdt: float
+    unrealized_usdt: float
+    total_usdt: float
+    daily_pnl_legacy: float
+
+
+class SessionPositionsInfo(BaseModel):
+    base_asset: str
+    base_free: float
+    usdt_free: float
+    mark_price: float | None = None
+
+
+class SessionSummaryResponse(BaseModel):
+    session_id: str
+    started_at: str
+    ended_at: str | None = None
+    agent: SessionAgentInfo
+    usage: SessionUsageInfo
+    trades: SessionTradesInfo
+    pnl: SessionPnLInfo
+    positions: SessionPositionsInfo
+    highlights: list[str] = []
+
+
+class SessionListResponse(BaseModel):
+    items: list[SessionSummaryResponse]
+    total: int

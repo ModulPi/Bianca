@@ -7,6 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 COPY pyproject.toml README.md start_poc.py run_poc_closure.py ./
 COPY agent ./agent
+COPY tests ./tests
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .

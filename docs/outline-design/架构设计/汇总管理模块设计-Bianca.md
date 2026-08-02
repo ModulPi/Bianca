@@ -216,10 +216,10 @@ Agent 运行中每 **N 分钟**（默认 15）写 `session_summaries` 中间态�
 
 ## 9. 验收标准
 
-- [ ] Agent stop 后可通过 `GET /summary/session/latest` 拿到完整汇总
-- [ ] `pnl.realized_usdt` 与手动按成交记录计算误差 < 0.01 USDT
-- [ ] `usage.total_tokens` 与 `decision_logs` 聚合一致
-- [ ] `loop_closed=true` 当且仅当存在 filled BUY 与 filled SELL
+- [x] Agent stop 后可通过 `GET /summary/session/latest` 拿到完整汇总
+- [x] `pnl.realized_usdt` 与手动按成交记录计算误差 < 0.01 USDT
+- [x] `usage.total_tokens` 与 `decision_logs` 聚合一致
+- [x] `loop_closed=true` 当且仅当存在 filled BUY 与 filled SELL
 - [ ] Web 控制台首页展示 Token、盈亏、闭环状态（M7）
 
 ---

@@ -124,6 +124,7 @@ class AgentRunner:
             result = await run_agent_tick(
                 settings=settings,
                 thread_id=self._snapshot.session_id or "default",
+                session_id=self._snapshot.session_id,
             )
             self._snapshot.last_tick = datetime.now(UTC).isoformat()
             self._snapshot.last_status = result.get("status")

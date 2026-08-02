@@ -80,3 +80,20 @@ class SessionSummaryRow(Base):
 
 
 Index("idx_session_summaries_started", SessionSummaryRow.started_at.desc())
+
+
+class PendingSignalRow(Base):
+    __tablename__ = "pending_signals"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    strategy_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    signal_json: Mapped[str] = mapped_column(Text, nullable=False)
+    market_data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    decision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    expires_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_pending_signals_status", PendingSignalRow.status, PendingSignalRow.expires_at)

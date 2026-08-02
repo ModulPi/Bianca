@@ -22,6 +22,7 @@ class AgentStatusResponse(BaseModel):
     llm_auto_execute: bool = True
     session_id: str | None = None
     session_started_at: str | None = None
+    execution_mode: str = "auto"
 
 
 class MessageResponse(BaseModel):
@@ -233,3 +234,25 @@ class CheckpointHistoryResponse(BaseModel):
     thread_id: str
     items: list[CheckpointStateItem]
     total: int
+
+
+class PendingSignalItem(BaseModel):
+    id: str
+    strategy_id: str | None = None
+    signal: dict
+    status: str
+    expires_at: str
+    created_at: str
+    session_id: str | None = None
+    decision_id: str | None = None
+
+
+class PendingSignalListResponse(BaseModel):
+    items: list[PendingSignalItem]
+    total: int
+
+
+class ConfirmPendingResponse(BaseModel):
+    status: str
+    message: str | None = None
+    trade_log_id: str | None = None

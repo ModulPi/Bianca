@@ -8,7 +8,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.storage.database import get_session_factory
-from agent.storage.models import AgentConfigRow, DecisionLog, RiskEvent, SessionSummaryRow, TradeLog
+from agent.storage.models import (
+    AgentConfigRow,
+    DecisionLog,
+    PendingSignalRow,
+    RiskEvent,
+    SessionSummaryRow,
+    TradeLog,
+)
 
 
 def _utc_now() -> str:
@@ -256,6 +263,17 @@ class TradeRepository:
         async with factory() as db:
             return await db.get(TradeLog, trade_id)
 
+    async def count_failed_since(self, since_iso: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(TradeLog)
+            .where(TradeLog.created_at >= since_iso, TradeLog.status == "failed")
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return int(result.scalar_one())
+
 
 class RiskEventRepository:
     async def save(
@@ -285,6 +303,15 @@ class RiskEventRepository:
         async with factory() as db:
             result = await db.execute(stmt)
             return list(result.scalars().all())
+
+    async def count_recent(self, *, since_iso: str, event_type: str | None = None) -> int:
+        stmt = select(func.count()).select_from(RiskEvent).where(RiskEvent.created_at >= since_iso)
+        if event_type:
+            stmt = stmt.where(RiskEvent.event_type == event_type)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return int(result.scalar_one())
 
 
 class AgentConfigRepository:
@@ -390,3 +417,81 @@ class SessionSummaryRepository:
         async with factory() as db:
             result = await db.execute(stmt)
             return result.scalar_one_or_none()
+
+
+class PendingSignalRepository:
+    async def create(
+        self,
+        *,
+        signal: dict,
+        market_data: dict,
+        decision_id: str | None,
+        session_id: str | None,
+        ttl_minutes: int,
+        strategy_id: str | None = None,
+    ) -> PendingSignalRow:
+        from datetime import timedelta
+
+        pending_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        expires = now + timedelta(minutes=ttl_minutes)
+        row = PendingSignalRow(
+            id=pending_id,
+            strategy_id=strategy_id,
+            signal_json=json.dumps(signal, ensure_ascii=False),
+            market_data_json=json.dumps(market_data, ensure_ascii=False),
+            decision_id=decision_id,
+            session_id=session_id,
+            status="pending",
+            expires_at=expires.isoformat(),
+            created_at=now.isoformat(),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def get_by_id(self, pending_id: str) -> PendingSignalRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(PendingSignalRow, pending_id)
+
+    async def list_pending(self, limit: int = 50) -> list[PendingSignalRow]:
+        stmt = (
+            select(PendingSignalRow)
+            .where(PendingSignalRow.status == "pending")
+            .order_by(PendingSignalRow.created_at.desc())
+            .limit(limit)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def update_status(self, pending_id: str, status: str) -> PendingSignalRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(PendingSignalRow, pending_id)
+            if row is None:
+                return None
+            row.status = status
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def expire_stale(self) -> int:
+        now = _utc_now()
+        factory = get_session_factory()
+        async with factory() as db:
+            stmt = select(PendingSignalRow).where(
+                PendingSignalRow.status == "pending",
+                PendingSignalRow.expires_at < now,
+            )
+            result = await db.execute(stmt)
+            rows = list(result.scalars().all())
+            for row in rows:
+                row.status = "expired"
+            await db.commit()
+            return len(rows)

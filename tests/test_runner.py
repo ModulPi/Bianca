@@ -37,6 +37,7 @@ async def test_agent_start_stop(client):
             mock_cfg.return_value.llm_configured = True
             mock_cfg.return_value.agent_tick_interval = 60
             mock_cfg.return_value.llm_auto_execute = True
+            mock_cfg.return_value.resolved_execution_mode = "auto"
 
             start = await client.post("/api/v1/agent/start")
             assert start.status_code == 200

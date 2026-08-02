@@ -10,6 +10,7 @@ from agent.config import Settings, get_settings
 from agent.exchange.spot_demo import SpotDemoExchange
 from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_agent
 from agent.graph.execute_agent import run_execute_agent
+from agent.graph.pending_agent import run_pending_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
 from agent.llm.prompts import normalize_symbol
@@ -71,10 +72,16 @@ async def log_signal_only_node(state: TradeState) -> TradeState:
     }
 
 
-def route_after_analysis(state: TradeState) -> Literal["risk", "log_only"]:
+def route_after_analysis(state: TradeState) -> Literal["risk", "queue_pending", "log_only"]:
     signal = state.get("llm_signal") or {}
     if signal.get("action") == "HOLD":
         return "log_only"
+    settings = get_settings()
+    mode = settings.resolved_execution_mode
+    if mode == "signal_only":
+        return "log_only"
+    if mode == "semi_auto":
+        return "queue_pending"
     if not state.get("llm_auto_execute"):
         return "log_only"
     return "risk"
@@ -92,13 +99,19 @@ def build_trade_graph() -> StateGraph:
     graph.add_node("fetch_market", fetch_market_node)
     graph.add_node("analysis", analysis_node)
     graph.add_node("log_only", log_signal_only_node)
+    graph.add_node("queue_pending", run_pending_agent)
     graph.add_node("risk", run_risk_agent)
     graph.add_node("execute", run_execute_agent)
 
     graph.add_edge(START, "fetch_market")
     graph.add_edge("fetch_market", "analysis")
-    graph.add_conditional_edges("analysis", route_after_analysis, {"risk": "risk", "log_only": "log_only"})
+    graph.add_conditional_edges(
+        "analysis",
+        route_after_analysis,
+        {"risk": "risk", "queue_pending": "queue_pending", "log_only": "log_only"},
+    )
     graph.add_edge("log_only", END)
+    graph.add_edge("queue_pending", END)
     graph.add_conditional_edges("risk", route_after_risk, {"execute": "execute", END: END})
     graph.add_edge("execute", END)
     return graph
@@ -108,6 +121,7 @@ async def run_agent_tick(
     *,
     market_data: dict[str, Any] | None = None,
     thread_id: str = "default",
+    session_id: str | None = None,
     settings: Settings | None = None,
 ) -> TradeState:
     """Run one full Supervisor → Analysis → Risk → Execute cycle."""
@@ -116,7 +130,8 @@ async def run_agent_tick(
     checkpoint_path = cfg.data_dir / "checkpoints.sqlite"
 
     initial: TradeState = {
-        "llm_auto_execute": cfg.llm_auto_execute,
+        "llm_auto_execute": cfg.llm_auto_execute_effective,
+        "session_id": session_id,
     }
     if market_data:
         initial["market_data"] = market_data

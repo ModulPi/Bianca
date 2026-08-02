@@ -27,10 +27,17 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-v4-flash"
     llm_auto_execute: bool = True
     llm_timeout: float = Field(default=30.0, gt=0)
+    # auto | semi_auto | signal_only（未设时由 LLM_AUTO_EXECUTE 推导）
+    execution_mode: Literal["auto", "semi_auto", "signal_only"] | None = None
 
     # Risk
     max_trade_amount: float = Field(default=50.0, gt=0)
     daily_loss_limit: float = Field(default=100.0, gt=0)
+    min_confidence: float = Field(default=0.6, ge=0, le=1)
+    max_position_pct: float = Field(default=0.8, gt=0, le=1)
+    max_drawdown_usdt: float = Field(default=50.0, gt=0)
+    circuit_breaker_failures: int = Field(default=3, ge=1)
+    pending_signal_ttl_minutes: int = Field(default=30, ge=1)
 
     # Agent
     agent_tick_interval: int = Field(default=300, ge=10)
@@ -53,6 +60,16 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
+
+    @property
+    def resolved_execution_mode(self) -> Literal["auto", "semi_auto", "signal_only"]:
+        if self.execution_mode:
+            return self.execution_mode
+        return "auto" if self.llm_auto_execute else "signal_only"
+
+    @property
+    def llm_auto_execute_effective(self) -> bool:
+        return self.resolved_execution_mode != "signal_only"
 
     @property
     def data_dir(self) -> Path:

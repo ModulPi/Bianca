@@ -64,4 +64,18 @@ CREATE TABLE IF NOT EXISTS session_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_session_summaries_started ON session_summaries(started_at DESC);
 
+CREATE TABLE IF NOT EXISTS pending_signals (
+    id                TEXT PRIMARY KEY,
+    strategy_id       TEXT,
+    signal_json       TEXT NOT NULL,
+    market_data_json  TEXT NOT NULL,
+    decision_id       TEXT,
+    session_id        TEXT,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    expires_at        TEXT NOT NULL,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_signals_status ON pending_signals(status, expires_at);
+
 COMMIT;

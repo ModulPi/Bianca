@@ -9,6 +9,7 @@ export interface AgentStatus {
   llm_auto_execute: boolean;
   session_id: string | null;
   session_started_at: string | null;
+  execution_mode?: string;
 }
 
 export interface SessionAgentInfo {
@@ -180,5 +181,27 @@ export interface CheckpointStateItem {
 export interface CheckpointHistoryResponse {
   thread_id: string;
   items: CheckpointStateItem[];
+  total: number;
+}
+
+export interface ConfirmPendingResponse {
+  status: string;
+  message?: string | null;
+  trade_log_id?: string | null;
+}
+
+export interface PendingSignalItem {
+  id: string;
+  strategy_id?: string | null;
+  signal: Record<string, unknown>;
+  status: string;
+  expires_at: string;
+  created_at: string;
+  session_id?: string | null;
+  decision_id?: string | null;
+}
+
+export interface PendingSignalListResponse {
+  items: PendingSignalItem[];
   total: number;
 }

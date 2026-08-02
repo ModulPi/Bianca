@@ -4,6 +4,7 @@ import { api, fetchDashboardSummary } from "../api/client";
 import AgentControl from "../components/AgentControl";
 import BalancePanel from "../components/BalancePanel";
 import ExecutionModeBanner from "../components/ExecutionModeBanner";
+import ConfirmQueue from "../components/ConfirmQueue";
 import LoopClosedBadge from "../components/LoopClosedBadge";
 import PnLChart from "../components/PnLChart";
 import SessionSummaryPanel from "../components/SessionSummaryPanel";
@@ -48,6 +49,13 @@ export default function DashboardPage() {
       </header>
 
       <ExecutionModeBanner status={statusPoll.data} />
+
+      {statusPoll.data?.execution_mode === "semi_auto" && (
+        <section>
+          <h2 className="mb-3 text-lg font-medium">待确认信号</h2>
+          <ConfirmQueue />
+        </section>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <AgentControl

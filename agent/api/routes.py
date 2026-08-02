@@ -11,6 +11,7 @@ from agent.api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
     BalanceResponse,
+    ConfirmPendingResponse,
     DecisionListResponse,
     DecisionLogItem,
     HealthResponse,
@@ -24,6 +25,7 @@ from agent.api.schemas import (
     UsageSummaryResponse,
 )
 from agent.config import get_settings
+from agent.confirmation.service import confirm_pending_signal
 from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo
 from agent.exchange._client import format_binance_error
 from agent.graph.supervisor import run_agent_tick
@@ -73,6 +75,7 @@ async def health() -> HealthResponse:
 @router.get("/agent/status", response_model=AgentStatusResponse)
 async def agent_status() -> AgentStatusResponse:
     snap = await get_runner().get_snapshot()
+    settings = get_settings()
     return AgentStatusResponse(
         running=snap.running,
         last_tick=snap.last_tick,
@@ -84,6 +87,7 @@ async def agent_status() -> AgentStatusResponse:
         llm_auto_execute=snap.llm_auto_execute,
         session_id=snap.session_id,
         session_started_at=snap.session_started_at,
+        execution_mode=settings.resolved_execution_mode,
     )
 
 
@@ -355,4 +359,21 @@ async def exchange_ticker(symbol: str | None = None) -> TickerResponse:
         bid=ticker.get("bid"),
         ask=ticker.get("ask"),
         timestamp=ticker.get("timestamp"),
+    )
+
+
+@router.post("/strategies/{strategy_id}/confirm", response_model=ConfirmPendingResponse)
+async def strategy_confirm(strategy_id: str) -> ConfirmPendingResponse:
+    """US-M02：半自动确认。PoC 阶段 strategy_id 即 pending_signal_id。"""
+    try:
+        result = await confirm_pending_signal(strategy_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    state = result.get("state") or {}
+    return ConfirmPendingResponse(
+        status=str(result.get("status", "unknown")),
+        message=state.get("message"),
+        trade_log_id=state.get("trade_log_id"),
     )

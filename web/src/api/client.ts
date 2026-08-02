@@ -3,9 +3,11 @@ import type {
   BalanceResponse,
   CheckpointHistoryResponse,
   CheckpointThreadListResponse,
+  ConfirmPendingResponse,
   DecisionListResponse,
   HealthResponse,
   MessageResponse,
+  PendingSignalListResponse,
   RiskEventListResponse,
   SessionListResponse,
   SessionSummary,
@@ -82,6 +84,13 @@ export const api = {
     request<CheckpointHistoryResponse>(
       `/checkpoints/threads/${encodeURIComponent(threadId)}/history?limit=${limit}`,
     ),
+
+  pendingSignals: (limit = 50) =>
+    request<PendingSignalListResponse>(`/pending-signals?limit=${limit}`),
+  confirmPending: (id: string) =>
+    request<ConfirmPendingResponse>(`/pending-signals/${id}/confirm`, { method: "POST" }),
+  rejectPending: (id: string) =>
+    request<MessageResponse>(`/pending-signals/${id}/reject`, { method: "POST" }),
 };
 
 export { ApiError };

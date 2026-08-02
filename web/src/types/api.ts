@@ -233,3 +233,23 @@ export interface StrategyTickResponse {
   trade_log_id?: string | null;
   pending_signal_id?: string | null;
 }
+
+export interface ValidationStatus {
+  id?: string | null;
+  status: string;
+  can_enable_live: boolean;
+  metrics: Record<string, number>;
+  requirements?: { min_hours?: number; require_loop?: boolean };
+  reasons?: string[];
+  started_at?: string | null;
+  validated_at?: string | null;
+  trading_mode: string;
+  telegram_configured: boolean;
+  futures_enabled: boolean;
+}
+
+export interface TradingModeResponse {
+  mode: string;
+  can_enable_live: boolean;
+  validation_status: string;
+}

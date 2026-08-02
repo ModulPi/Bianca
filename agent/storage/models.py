@@ -117,3 +117,15 @@ class StrategyRow(Base):
 
 
 Index("idx_strategies_status", StrategyRow.status)
+
+
+class PaperValidationRow(Base):
+    __tablename__ = "paper_validations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    strategy_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    started_at: Mapped[str] = mapped_column(String, nullable=False)
+    validated_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)

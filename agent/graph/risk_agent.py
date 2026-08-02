@@ -39,6 +39,9 @@ async def run_risk_agent(state: TradeState, *, settings: Settings | None = None)
             detail={"reason": verdict.reason, "signal": signal},
             related_trade_id=trade_id,
         )
+        from agent.notify.telegram import notify_risk_reject
+
+        await notify_risk_reject(verdict.reason or verdict.rule, signal)
 
     return {
         **state,

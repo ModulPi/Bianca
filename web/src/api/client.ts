@@ -17,6 +17,8 @@ import type {
   TickerResponse,
   TradeListResponse,
   UsageSummary,
+  TradingModeResponse,
+  ValidationStatus,
 } from "../types/api";
 
 const BASE = "/api/v1";
@@ -109,6 +111,16 @@ export const api = {
     request<StrategyItem>(`/strategies/${id}/stop`, { method: "POST" }),
   tickStrategy: (id: string) =>
     request<StrategyTickResponse>(`/strategies/${id}/tick`, { method: "POST" }),
+
+  validationStatus: () => request<ValidationStatus>("/validation/status"),
+  validationEvaluate: () => request<ValidationStatus>("/validation/evaluate", { method: "POST" }),
+  validationReset: () => request<MessageResponse>("/validation/reset", { method: "POST" }),
+  notifyTest: () => request<MessageResponse>("/notify/test", { method: "POST" }),
+  setTradingMode: (mode: string) =>
+    request<TradingModeResponse>("/trading/mode", {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 };
 
 export { ApiError };

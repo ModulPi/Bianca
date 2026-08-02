@@ -11,6 +11,7 @@ from agent.storage.database import get_session_factory
 from agent.storage.models import (
     AgentConfigRow,
     DecisionLog,
+    PaperValidationRow,
     PendingSignalRow,
     RiskEvent,
     SessionSummaryRow,
@@ -355,6 +356,13 @@ class AgentConfigRepository:
         await self._set_row(self._PNL_DATE_KEY, today)
         await self._set_row(self._PNL_KEY, str(pnl))
 
+    async def get_config_value(self, key: str) -> str | None:
+        row = await self._get_row(key)
+        return row.value if row else None
+
+    async def set_config_value(self, key: str, value: str) -> None:
+        await self._set_row(key, value)
+
 
 class SessionSummaryRepository:
     async def save(
@@ -590,3 +598,80 @@ class StrategyRepository:
             row.state_json = json.dumps(state, ensure_ascii=False)
             row.updated_at = _utc_now()
             await db.commit()
+
+
+class PaperValidationRepository:
+    async def create(self, *, started_at: str, strategy_id: str | None = None) -> PaperValidationRow:
+        vid = str(uuid.uuid4())
+        now = _utc_now()
+        row = PaperValidationRow(
+            id=vid,
+            strategy_id=strategy_id,
+            started_at=started_at,
+            validated_at=None,
+            status="running",
+            metrics_json=json.dumps(
+                {
+                    "cumulative_hours": 0.0,
+                    "sessions": 0,
+                    "loop_closed_sessions": 0,
+                    "buy_filled_total": 0,
+                    "sell_filled_total": 0,
+                }
+            ),
+            created_at=now,
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def get_active(self) -> PaperValidationRow | None:
+        stmt = (
+            select(PaperValidationRow)
+            .where(PaperValidationRow.status.in_(("running", "passed")))
+            .order_by(PaperValidationRow.created_at.desc())
+            .limit(1)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def get_latest(self) -> PaperValidationRow | None:
+        stmt = select(PaperValidationRow).order_by(PaperValidationRow.created_at.desc()).limit(1)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def update_metrics(self, validation_id: str, metrics: dict) -> None:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(PaperValidationRow, validation_id)
+            if row is None:
+                return
+            row.metrics_json = json.dumps(metrics, ensure_ascii=False)
+            await db.commit()
+
+    async def mark_passed(self, validation_id: str) -> None:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(PaperValidationRow, validation_id)
+            if row is None:
+                return
+            row.status = "passed"
+            row.validated_at = _utc_now()
+            await db.commit()
+
+    async def reset(self) -> PaperValidationRow:
+        factory = get_session_factory()
+        async with factory() as db:
+            stmt = select(PaperValidationRow).where(PaperValidationRow.status == "running")
+            result = await db.execute(stmt)
+            for row in result.scalars().all():
+                row.status = "cancelled"
+            await db.commit()
+        return await self.create(started_at=_utc_now())

@@ -54,9 +54,26 @@ class Settings(BaseSettings):
     api_port: int = 8000
     log_level: str = "INFO"
 
+    # M8 — 通知与模拟门禁
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    notify_on_session_close: bool = True
+    notify_on_risk_reject: bool = True
+    trading_mode: Literal["demo", "live"] = "demo"
+    paper_validation_min_hours: float = Field(default=24.0, gt=0)
+    paper_validation_require_loop: bool = True
+    futures_enabled: bool = False
+
     @field_validator("llm_auto_execute", mode="before")
     @classmethod
     def parse_bool(cls, value: object) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @field_validator("notify_on_session_close", "notify_on_risk_reject", "paper_validation_require_loop", "futures_enabled", mode="before")
+    @classmethod
+    def parse_notify_bool(cls, value: object) -> bool:
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
@@ -84,6 +101,10 @@ class Settings(BaseSettings):
         if self.llm_provider == "ollama":
             return bool(self.llm_base_url.strip() and self.llm_model.strip())
         return bool(self.llm_api_key.strip())
+
+    @property
+    def telegram_configured(self) -> bool:
+        return bool(self.telegram_bot_token.strip() and self.telegram_chat_id.strip())
 
 
 @lru_cache

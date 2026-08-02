@@ -11,6 +11,12 @@ from agent.api.pending_routes import router as pending_router
 from agent.api.routes import router
 from agent.api.strategy_routes import router as strategy_router
 from agent.api.summary_routes import router as summary_router
+from agent.api.validation_routes import (
+    futures_router,
+    notify_router,
+    router as validation_router,
+    trading_router,
+)
 from agent.api.ws_routes import router as ws_router
 from agent.config import clear_settings_cache
 from agent.confirmation.service import expire_pending_signals
@@ -64,6 +70,10 @@ app.include_router(summary_router, prefix="/api/v1")
 app.include_router(checkpoint_router, prefix="/api/v1")
 app.include_router(pending_router, prefix="/api/v1")
 app.include_router(strategy_router, prefix="/api/v1")
+app.include_router(validation_router, prefix="/api/v1")
+app.include_router(notify_router, prefix="/api/v1")
+app.include_router(trading_router, prefix="/api/v1")
+app.include_router(futures_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 
 

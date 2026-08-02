@@ -10,6 +10,7 @@ import SessionsPage from "./pages/SessionsPage";
 import StrategiesPage from "./pages/StrategiesPage";
 import TradesPage from "./pages/TradesPage";
 import UsagePage from "./pages/UsagePage";
+import ValidationPage from "./pages/ValidationPage";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="decisions" element={<DecisionsPage />} />
         <Route path="risk" element={<RiskPage />} />
         <Route path="checkpoints" element={<CheckpointsPageWithQuery />} />
+        <Route path="validation" element={<ValidationPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

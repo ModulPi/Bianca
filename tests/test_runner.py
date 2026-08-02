@@ -38,19 +38,20 @@ async def test_agent_start_stop(client):
             mock_cfg.return_value.agent_tick_interval = 60
             mock_cfg.return_value.llm_auto_execute = True
             mock_cfg.return_value.resolved_execution_mode = "auto"
+            with patch("agent.runner.get_settings", mock_cfg):
+                with patch("agent.validation.paper_gate.get_settings", mock_cfg):
+                    start = await client.post("/api/v1/agent/start")
+                    assert start.status_code == 200
+                    assert "started" in start.json()["message"].lower()
 
-            start = await client.post("/api/v1/agent/start")
-            assert start.status_code == 200
-            assert "started" in start.json()["message"].lower()
+                    status = await client.get("/api/v1/agent/status")
+                    assert status.json()["running"] is True
 
-            status = await client.get("/api/v1/agent/status")
-            assert status.json()["running"] is True
+                    stop = await client.post("/api/v1/agent/stop")
+                    assert stop.status_code == 200
 
-            stop = await client.post("/api/v1/agent/stop")
-            assert stop.status_code == 200
-
-            status2 = await client.get("/api/v1/agent/status")
-            assert status2.json()["running"] is False
+                    status2 = await client.get("/api/v1/agent/status")
+                    assert status2.json()["running"] is False
 
 
 @pytest.mark.asyncio
@@ -68,9 +69,12 @@ async def test_runner_records_tick(client):
         with patch("agent.runner.get_settings") as mock_cfg:
             mock_cfg.return_value.agent_tick_interval = 1
             mock_cfg.return_value.llm_configured = True
-            await runner.start()
-            await asyncio.sleep(0.5)
-            await runner.stop()
+            mock_cfg.return_value.paper_validation_min_hours = 24.0
+            mock_cfg.return_value.paper_validation_require_loop = True
+            with patch("agent.validation.paper_gate.get_settings", mock_cfg):
+                await runner.start()
+                await asyncio.sleep(0.5)
+                await runner.stop()
     snap = await runner.get_snapshot()
     assert snap.tick_count >= 1
     assert snap.last_status == "filled"

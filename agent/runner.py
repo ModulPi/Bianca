@@ -52,6 +52,10 @@ class AgentRunner:
         self._snapshot.session_id = str(uuid.uuid4())
         self._snapshot.session_started_at = datetime.now(UTC).isoformat()
         self._snapshot.tick_count = 0
+        from agent.validation.paper_gate import assert_demo_mode_for_trading, ensure_validation_running
+
+        await assert_demo_mode_for_trading()
+        await ensure_validation_running(settings=settings)
         self._task = asyncio.create_task(self._loop(), name="bianca-agent-runner")
         logger.info(
             "Agent runner started (interval=%ss, session=%s)",

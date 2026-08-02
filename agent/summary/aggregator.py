@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
+import logging
 from typing import Any
 
 from agent.config import Settings, get_settings
@@ -14,6 +16,8 @@ from agent.storage.repository import (
     TradeRepository,
 )
 from agent.summary.pnl import PnLResult, compute_pnl
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
@@ -133,6 +137,16 @@ async def build_session_summary(
     }
 
 
+async def build_daily_summary_text(date: str | None = None) -> str:
+    day = date or datetime.now(UTC).date().isoformat()
+    repo = SessionSummaryRepository()
+    rows = await repo.list_recent(limit=100)
+    day_rows = [r for r in rows if r.started_at.startswith(day)]
+    total_pnl = sum(json.loads(r.pnl_json).get("realized_usdt", 0) for r in day_rows)
+    loops = sum(1 for r in day_rows if r.loop_closed)
+    return f"日期 {day}\n会话 {len(day_rows)} · 闭环 {loops}\n已实现 PnL: {total_pnl:.4f} USDT"
+
+
 async def persist_session_summary(summary: dict[str, Any]) -> SessionSummaryRow:
     repo = SessionSummaryRepository()
     return await repo.save(
@@ -167,4 +181,12 @@ async def close_session(
         settings=settings,
     )
     await persist_session_summary(summary)
+    try:
+        from agent.notify.telegram import notify_session_closed
+        from agent.validation.paper_gate import record_session_for_validation
+
+        await record_session_for_validation(summary, settings=settings)
+        await notify_session_closed(summary, settings=settings)
+    except Exception:  # noqa: BLE001
+        logger.exception("Post-session notify/validation failed")
     return summary

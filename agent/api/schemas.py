@@ -298,3 +298,38 @@ class StrategyTickResponse(BaseModel):
     reason: str | None = None
     trade_log_id: str | None = None
     pending_signal_id: str | None = None
+
+
+class ValidationStatusResponse(BaseModel):
+    id: str | None = None
+    status: str
+    can_enable_live: bool
+    metrics: dict
+    requirements: dict | None = None
+    reasons: list[str] = []
+    started_at: str | None = None
+    validated_at: str | None = None
+    trading_mode: str = "demo"
+    telegram_configured: bool = False
+    futures_enabled: bool = False
+
+
+class NotifyStatusResponse(BaseModel):
+    telegram_configured: bool
+    notify_on_session_close: bool
+    notify_on_risk_reject: bool
+
+
+class TradingModeRequest(BaseModel):
+    mode: str
+
+
+class TradingModeResponse(BaseModel):
+    mode: str
+    can_enable_live: bool
+    validation_status: str
+
+
+class FuturesStatusResponse(BaseModel):
+    enabled: bool
+    message: str

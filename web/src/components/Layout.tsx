@@ -8,6 +8,7 @@ const links = [
   { to: "/checkpoints", label: "回放" },
   { to: "/decisions", label: "决策" },
   { to: "/risk", label: "风控" },
+  { to: "/validation", label: "门禁" },
   { to: "/usage", label: "Token" },
 ];
 
@@ -37,7 +38,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <p className="mt-auto text-xs text-zinc-600">M7 · Web Console</p>
+        <p className="mt-auto text-xs text-zinc-600">M8 · Web Console</p>
       </aside>
       <main className="flex-1 p-6 overflow-auto">
         <Outlet />

@@ -95,4 +95,14 @@ CREATE TABLE IF NOT EXISTS strategies (
 
 CREATE INDEX IF NOT EXISTS idx_strategies_status ON strategies(status);
 
+CREATE TABLE IF NOT EXISTS paper_validations (
+    id                TEXT PRIMARY KEY,
+    strategy_id       TEXT,
+    started_at        TEXT NOT NULL,
+    validated_at      TEXT,
+    status            TEXT NOT NULL DEFAULT 'running',
+    metrics_json      TEXT NOT NULL DEFAULT '{}',
+    created_at        TEXT NOT NULL
+);
+
 COMMIT;

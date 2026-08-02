@@ -10,6 +10,16 @@ from agent.storage.repository import AgentConfigRepository, TradeRepository
 
 async def run_execute_agent(state: TradeState, *, settings: Settings | None = None) -> TradeState:
     cfg = settings or get_settings()
+    from agent.trading.mode import get_trading_mode
+    from agent.validation.paper_gate import assert_demo_mode_for_trading
+
+    await assert_demo_mode_for_trading()
+    if await get_trading_mode() == "live" and not cfg.futures_enabled:
+        return {
+            **state,
+            "status": "skipped",
+            "message": "live 模式已启用但合约 API 未对接，暂不下单",
+        }
     signal = state.get("llm_signal") or {}
     market_data = state.get("market_data") or {}
     trade_id = state.get("trade_log_id")

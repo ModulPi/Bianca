@@ -4,9 +4,9 @@
 
 面向 C 端用户的加密货币自动交易 Agent 平台。PoC 阶段聚焦：**LLM 自主决策 + 币安 Demo 现货 + LangGraph 编排**。
 
-## 当前阶段：PoC
+## 当前阶段：MVP
 
-在币安 Demo 现货环境上，由 LLM 自主分析行情、产出买卖信号，经最小风控后在模拟盘完成 **1 次买入 + 1 次卖出** 闭环。
+PoC 已验收；MVP 提供 Web 控制台、策略模板、半自动确认、完整风控、汇总管理、模拟门禁与 Telegram/邮件通知。可选 `--profile mvp` 启用 PostgreSQL + Redis 双栈。
 
 | 项 | PoC 范围 |
 |----|----------|
@@ -81,6 +81,30 @@ curl http://127.0.0.1:8000/api/v1/checkpoints/threads/default/history
 ```
 
 **切换本地 Ollama：** 修改 `.env` 中 `LLM_PROVIDER=ollama` 及相关 URL/模型，重启 API 即可。
+
+## 快速开始（MVP 双栈）
+
+```bash
+# PostgreSQL + TimescaleDB + Redis
+docker compose --profile mvp -f docker-compose.yml -f docker-compose.mvp.yml up -d --build
+
+# .env 中设置（可选）
+# API_TOKEN=...          # 启用 API 鉴权
+# ENCRYPTION_KEY=...     # 加密存储密钥（/api/v1/secrets/keys）
+# SMTP_* / NOTIFY_EMAIL_* # 邮件通知
+
+curl http://127.0.0.1:8000/api/v1/health
+curl -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8000/api/v1/summary/session/latest
+curl http://127.0.0.1:8000/api/v1/summary/{session_id}/export.csv
+curl http://127.0.0.1:8000/api/v1/market/klines?symbol=BTCUSDT
+curl http://127.0.0.1:9090   # Prometheus（profile mvp）
+curl http://127.0.0.1:3001   # Grafana（admin/bianca）
+curl http://127.0.0.1:8000/metrics
+curl -X POST http://127.0.0.1:8000/api/v1/secrets/reload
+
+# 实盘切换（需模拟验证通过 + LIVE_TRADING_CONFIRMED=true）
+# curl -X POST http://127.0.0.1:8000/api/v1/trading/mode -d '{"mode":"live"}'
+```
 
 ## Web 控制台（M7）
 

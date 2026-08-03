@@ -96,6 +96,9 @@ async def start_strategy(strategy_id: str) -> StrategyItem:
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Strategy not found")
+    from agent.validation.paper_gate import ensure_validation_running
+
+    await ensure_validation_running()
     await get_strategy_runner().start()
     return _to_item(row)
 

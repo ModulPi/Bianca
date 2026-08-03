@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from agent.config import Settings, get_settings
-from agent.confirmation.service import confirm_pending_signal, queue_pending_signal
-from agent.exchange.spot_demo import SpotDemoExchange
+from agent.confirmation.service import queue_pending_signal
+from agent.exchange.market_data import fetch_market_snapshot
 from agent.graph.execute_agent import run_execute_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
-from agent.llm.prompts import normalize_symbol
 from agent.storage.json_utils import parse_json_field
 from agent.storage.repository import StrategyRepository
-from agent.strategy.base import StrategyEvalResult, StrategySignal, StrategyType
+from agent.strategy.base import StrategyEvalResult, StrategySignal, StrategyType, with_market
 from agent.strategy.dca import evaluate_dca
 from agent.strategy.grid import evaluate_grid
 from agent.strategy.trend import evaluate_trend
+from agent.trading.executor import resolve_trade_market
+from agent.validation.paper_gate import assert_demo_mode_for_trading, ensure_validation_running
 
 DEFAULT_PARAMS: dict[str, dict[str, Any]] = {
     "grid": {
@@ -48,20 +48,14 @@ def evaluate_strategy(
     return evaluate_trend(params=params, state=state, market_data=market_data, symbol=symbol)
 
 
-async def fetch_market(settings: Settings | None = None) -> dict[str, Any]:
-    cfg = settings or get_settings()
-    async with SpotDemoExchange(cfg) as demo:
-        ticker = await demo.fetch_ticker(cfg.trade_symbol)
-        balance = await demo.fetch_balance()
-    free = {k: float(v) for k, v in balance.get("free", {}).items() if v}
-    return {
-        "symbol": normalize_symbol(ticker.get("symbol", cfg.trade_symbol)),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-        "balance": {"free": free},
-    }
+async def fetch_market(
+    settings: Settings | None = None,
+    *,
+    market: str = "spot",
+    symbol: str | None = None,
+) -> dict[str, Any]:
+    """兼容旧调用；请优先使用 fetch_market_snapshot。"""
+    return await fetch_market_snapshot(market=market, settings=settings, symbol=symbol)
 
 
 async def execute_signal_pipeline(
@@ -73,6 +67,8 @@ async def execute_signal_pipeline(
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     cfg = settings or get_settings()
+    await assert_demo_mode_for_trading(settings=cfg)
+
     state: TradeState = {
         "llm_signal": signal.to_dict(),
         "market_data": market_data,
@@ -103,18 +99,32 @@ async def run_strategy_tick(strategy_id: str, *, settings: Settings | None = Non
     if row.status != "running":
         raise ValueError(f"策略状态 {row.status}，非 running")
 
+    strategy_market = row.market or "spot"
+    resolved_market = resolve_trade_market({"market": strategy_market}, cfg)
+    if strategy_market in {"futures_u", "futures_coin"} and resolved_market == "spot":
+        return {
+            "status": "skipped",
+            "signal": None,
+            "reason": f"策略 market={strategy_market} 但 FUTURES_ENABLED=false，已跳过",
+        }
+
     params = parse_json_field(row.params_json)
     state = parse_json_field(row.state_json)
-    market_data = await fetch_market(cfg)
+    market_data = await fetch_market_snapshot(
+        market=strategy_market,
+        settings=cfg,
+        symbol=cfg.trade_symbol,
+    )
     symbol = market_data.get("symbol") or cfg.trade_symbol
 
     result = evaluate_strategy(row.type, params=params, state=state, market_data=market_data, symbol=symbol)
     await repo.update_state(strategy_id, result.state)
 
-    signal = result.signal
+    signal = with_market(result.signal, resolved_market)
     if signal.action == "HOLD":
         return {"status": "hold", "signal": signal.to_dict(), "reason": signal.reason}
 
+    await ensure_validation_running(settings=cfg)
     exec_result = await execute_signal_pipeline(
         signal,
         market_data,
@@ -127,4 +137,5 @@ async def run_strategy_tick(strategy_id: str, *, settings: Settings | None = Non
         "signal": signal.to_dict(),
         "trade_log_id": exec_result.get("trade_log_id"),
         "pending_signal_id": exec_result.get("pending_signal_id"),
+        "reason": exec_result.get("reason"),
     }

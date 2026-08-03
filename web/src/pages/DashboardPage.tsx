@@ -75,8 +75,30 @@ export default function DashboardPage() {
             label="系统"
             value={health?.status ?? "—"}
             tone={health?.status === "ok" ? "positive" : "warn"}
+            hint={
+              health?.api_auth_enabled
+                ? "API 鉴权已启用"
+                : health?.database_backend
+                  ? `DB: ${health.database_backend}`
+                  : undefined
+            }
           />
-          <StatCard label="LLM" value={health?.llm ?? "—"} hint={health?.llm_provider} />
+          <StatCard
+            label="LLM"
+            value={health?.llm ?? "—"}
+            hint={health?.llm_provider}
+          />
+          <StatCard
+            label="Binance"
+            value={health?.binance_demo ?? "—"}
+            hint={
+              health?.binance_live
+                ? `live: ${health.binance_live}`
+                : health?.runtime_secrets_loaded
+                  ? "运行时密钥已加载"
+                  : undefined
+            }
+          />
         </div>
       </div>
 

@@ -105,4 +105,15 @@ CREATE TABLE IF NOT EXISTS paper_validations (
     created_at        TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS api_keys (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    key_type          TEXT NOT NULL,
+    encrypted_value   TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_type ON api_keys(key_type);
+
 COMMIT;

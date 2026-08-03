@@ -15,6 +15,7 @@ from agent.storage.constants import (
 from agent.storage.database import get_session_factory, schema_mode
 from agent.storage.models import (
     AgentConfigRow,
+    ApiKeyRow,
     DecisionLog,
     PaperValidationRow,
     PendingSignalRow,
@@ -389,7 +390,7 @@ class SessionSummaryRepository:
         positions_json: dict,
         loop_closed: bool,
     ) -> SessionSummaryRow:
-        row = SessionSummaryRow(
+        payload = SessionSummaryRow(
             id=session_id,
             started_at=started_at,
             ended_at=ended_at,
@@ -404,10 +405,23 @@ class SessionSummaryRepository:
         )
         factory = get_session_factory()
         async with factory() as db:
-            db.add(row)
+            existing = await db.get(SessionSummaryRow, session_id)
+            if existing is None:
+                db.add(payload)
+            else:
+                existing.started_at = started_at
+                existing.ended_at = ended_at
+                existing.tick_count = tick_count
+                existing.trading_style = trading_style
+                existing.usage_json = payload.usage_json
+                existing.trades_json = payload.trades_json
+                existing.pnl_json = payload.pnl_json
+                existing.positions_json = payload.positions_json
+                existing.loop_closed = payload.loop_closed
+                payload = existing
             await db.commit()
-            await db.refresh(row)
-            return row
+            await db.refresh(payload)
+            return payload
 
     async def get_by_id(self, session_id: str) -> SessionSummaryRow | None:
         factory = get_session_factory()
@@ -685,3 +699,139 @@ class PaperValidationRepository:
                 row.status = "cancelled"
             await db.commit()
         return await self.create(started_at=_utc_now())
+
+
+class ApiKeyRepository:
+    async def create(
+        self,
+        *,
+        name: str,
+        key_type: str,
+        encrypted_value: str,
+    ) -> ApiKeyRow:
+        now = _utc_now()
+        row = ApiKeyRow(
+            id=str(uuid.uuid4()),
+            name=name,
+            key_type=key_type,
+            encrypted_value=encrypted_value,
+            created_at=now,
+            updated_at=now,
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def list_all(self) -> list[ApiKeyRow]:
+        stmt = select(ApiKeyRow).order_by(ApiKeyRow.created_at.desc())
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_by_id(self, key_id: str) -> ApiKeyRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(ApiKeyRow, key_id)
+
+    async def delete(self, key_id: str) -> bool:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(ApiKeyRow, key_id)
+            if row is None:
+                return False
+            await db.delete(row)
+            await db.commit()
+            return True
+
+
+class KlineRepository:
+    async def insert_candles(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        candles: list[tuple],
+    ) -> int:
+        if not candles:
+            return 0
+        from agent.storage.database import is_postgres_url
+
+        if not is_postgres_url(get_settings().database_url):
+            return 0
+
+        from sqlalchemy import text
+
+        sql = text(
+            """
+            INSERT INTO klines (time, symbol, interval, open, high, low, close, volume)
+            VALUES (:time, :symbol, :interval, :open, :high, :low, :close, :volume)
+            ON CONFLICT (symbol, interval, time) DO NOTHING
+            """
+        )
+        count = 0
+        factory = get_session_factory()
+        async with factory() as db:
+            for candle in candles:
+                ts, o, h, l, c, v = candle[:6]
+                ts_iso = datetime.fromtimestamp(ts / 1000, tz=UTC).isoformat()
+                await db.execute(
+                    sql,
+                    {
+                        "time": ts_iso,
+                        "symbol": symbol,
+                        "interval": interval,
+                        "open": float(o),
+                        "high": float(h),
+                        "low": float(l),
+                        "close": float(c),
+                        "volume": float(v or 0),
+                    },
+                )
+                count += 1
+            await db.commit()
+        return count
+
+    async def list_recent(
+        self,
+        *,
+        symbol: str,
+        interval: str = "1m",
+        limit: int = 100,
+    ) -> list[dict]:
+        from agent.storage.database import is_postgres_url
+
+        if not is_postgres_url(get_settings().database_url):
+            return []
+
+        from sqlalchemy import text
+
+        sql = text(
+            """
+            SELECT time, open, high, low, close, volume
+            FROM klines
+            WHERE symbol = :symbol AND interval = :interval
+            ORDER BY time DESC
+            LIMIT :limit
+            """
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(
+                sql, {"symbol": symbol, "interval": interval, "limit": limit}
+            )
+            rows = result.fetchall()
+        return [
+            {
+                "time": str(r[0]),
+                "open": r[1],
+                "high": r[2],
+                "low": r[3],
+                "close": r[4],
+                "volume": r[5],
+            }
+            for r in rows
+        ]

@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     log_level: str = "INFO"
+    api_token: str = ""
+    encryption_key: str = ""
 
     # M8 — 通知与模拟门禁
     telegram_bot_token: str = ""
@@ -64,6 +66,23 @@ class Settings(BaseSettings):
     paper_validation_min_hours: float = Field(default=24.0, gt=0)
     paper_validation_require_loop: bool = True
     futures_enabled: bool = False
+    live_trading_confirmed: bool = False
+
+    # 邮件通知（MVP）
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    notify_email_to: str = ""
+    notify_email_from: str = ""
+
+    # 会话快照与 K 线（MVP）
+    session_snapshot_interval_minutes: int = Field(default=15, ge=1)
+    klines_enabled: bool = True
+    klines_interval: str = "1m"
+    default_trade_market: Literal["spot", "futures_u", "futures_coin"] = "spot"
+    metrics_enabled: bool = True
 
     @field_validator("llm_auto_execute", mode="before")
     @classmethod
@@ -72,7 +91,17 @@ class Settings(BaseSettings):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
 
-    @field_validator("notify_on_session_close", "notify_on_risk_reject", "paper_validation_require_loop", "futures_enabled", mode="before")
+    @field_validator(
+        "notify_on_session_close",
+        "notify_on_risk_reject",
+        "paper_validation_require_loop",
+        "futures_enabled",
+        "klines_enabled",
+        "smtp_use_tls",
+        "metrics_enabled",
+        "live_trading_confirmed",
+        mode="before",
+    )
     @classmethod
     def parse_notify_bool(cls, value: object) -> bool:
         if isinstance(value, str):
@@ -112,6 +141,22 @@ class Settings(BaseSettings):
         return bool(self.redis_url.strip())
 
     @property
+    def api_auth_enabled(self) -> bool:
+        return bool(self.api_token.strip())
+
+    @property
+    def encryption_configured(self) -> bool:
+        return bool(self.encryption_key.strip())
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(
+            self.smtp_host.strip()
+            and self.notify_email_to.strip()
+            and (self.smtp_user.strip() or self.notify_email_from.strip())
+        )
+
+    @property
     def database_backend(self) -> str:
         url = self.database_url.lower()
         if url.startswith("sqlite"):
@@ -121,10 +166,26 @@ class Settings(BaseSettings):
         return "unknown"
 
 
+_effective_settings: Settings | None = None
+
+
 @lru_cache
-def get_settings() -> Settings:
+def _load_base_settings() -> Settings:
     return Settings()
 
 
+def get_settings() -> Settings:
+    if _effective_settings is not None:
+        return _effective_settings
+    return _load_base_settings()
+
+
+def set_effective_settings(settings: Settings) -> None:
+    global _effective_settings
+    _effective_settings = settings
+
+
 def clear_settings_cache() -> None:
-    get_settings.cache_clear()
+    global _effective_settings
+    _effective_settings = None
+    _load_base_settings.cache_clear()

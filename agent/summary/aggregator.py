@@ -164,6 +164,26 @@ async def persist_session_summary(summary: dict[str, Any]) -> SessionSummaryRow:
     )
 
 
+async def save_interim_snapshot(
+    *,
+    session_id: str,
+    started_at: str,
+    tick_count: int,
+    last_status: str | None,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    summary = await build_session_summary(
+        session_id=session_id,
+        started_at=started_at,
+        ended_at=None,
+        tick_count=tick_count,
+        last_status=last_status,
+        settings=settings,
+    )
+    await persist_session_summary(summary)
+    return summary
+
+
 async def close_session(
     *,
     session_id: str,
@@ -183,11 +203,16 @@ async def close_session(
     )
     await persist_session_summary(summary)
     try:
-        from agent.notify.telegram import notify_session_closed
+        from agent.notify.telegram import format_session_summary, notify_session_closed
+        from agent.notify.email import send_email
         from agent.validation.paper_gate import record_session_for_validation
 
         await record_session_for_validation(summary, settings=settings)
-        await notify_session_closed(summary, settings=settings)
+        cfg = settings or get_settings()
+        text = format_session_summary(summary)
+        await notify_session_closed(summary, settings=cfg)
+        if cfg.notify_on_session_close and cfg.email_configured:
+            await send_email("Bianca 会话结束", text, settings=cfg)
     except Exception:  # noqa: BLE001
         logger.exception("Post-session notify/validation failed")
     return summary

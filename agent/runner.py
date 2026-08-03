@@ -35,6 +35,7 @@ class AgentRunner:
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._snapshot = RunnerSnapshot()
+        self._last_interim_snapshot: datetime | None = None
 
     @property
     def running(self) -> bool:
@@ -52,6 +53,10 @@ class AgentRunner:
         self._snapshot.session_id = str(uuid.uuid4())
         self._snapshot.session_started_at = datetime.now(UTC).isoformat()
         self._snapshot.tick_count = 0
+        self._last_interim_snapshot = None
+        from agent.metrics import set_agent_running
+
+        set_agent_running(True)
         from agent.validation.paper_gate import assert_demo_mode_for_trading, ensure_validation_running
 
         await assert_demo_mode_for_trading()
@@ -96,6 +101,9 @@ class AgentRunner:
                 logger.exception("Failed to persist session summary")
         self._snapshot.session_id = None
         self._snapshot.session_started_at = None
+        from agent.metrics import set_agent_running
+
+        set_agent_running(False)
         logger.info("Agent runner stopped")
 
     async def get_snapshot(self) -> RunnerSnapshot:
@@ -142,13 +150,43 @@ class AgentRunner:
             self._snapshot.last_status = result.get("status")
             self._snapshot.last_error = None
             self._snapshot.tick_count += 1
+            from agent.metrics import record_agent_tick
+
+            record_agent_tick(result.get("status"))
             logger.info("Agent tick #%s status=%s", self._snapshot.tick_count, self._snapshot.last_status)
+            await self._maybe_persist_interim_snapshot(settings)
             await self._maybe_stop_on_loop_closed(settings)
         except Exception as exc:  # noqa: BLE001 — keep loop alive
             logger.exception("Agent tick failed")
             self._snapshot.last_tick = datetime.now(UTC).isoformat()
             self._snapshot.last_error = str(exc)
             self._snapshot.tick_count += 1
+            from agent.metrics import record_agent_tick
+
+            record_agent_tick("error")
+
+    async def _maybe_persist_interim_snapshot(self, settings: Settings) -> None:
+        if not self._snapshot.session_id or not self._snapshot.session_started_at:
+            return
+        interval = settings.session_snapshot_interval_minutes
+        now = datetime.now(UTC)
+        if self._last_interim_snapshot is not None:
+            elapsed = (now - self._last_interim_snapshot).total_seconds() / 60
+            if elapsed < interval:
+                return
+        from agent.summary.aggregator import save_interim_snapshot
+
+        try:
+            await save_interim_snapshot(
+                session_id=self._snapshot.session_id,
+                started_at=self._snapshot.session_started_at,
+                tick_count=self._snapshot.tick_count,
+                last_status=self._snapshot.last_status,
+                settings=settings,
+            )
+            self._last_interim_snapshot = now
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to persist interim session snapshot")
 
     async def _maybe_stop_on_loop_closed(self, settings: Settings) -> None:
         if not self._snapshot.session_id or not self._snapshot.session_started_at:

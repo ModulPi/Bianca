@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
+from agent.checkpoint.saver import checkpointer_context
 from agent.config import Settings, get_settings
 from agent.exchange.spot_demo import SpotDemoExchange
 from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_agent
@@ -25,7 +25,10 @@ async def fetch_market_node(state: TradeState) -> TradeState:
     if not settings.binance_configured:
         raise RuntimeError("market_data missing and Binance not configured")
 
-    async with SpotDemoExchange(settings) as demo:
+    from agent.trading.mode import get_trading_mode
+
+    live = await get_trading_mode() == "live"
+    async with SpotDemoExchange(settings, live=live) as demo:
         ticker = await demo.fetch_ticker(settings.trade_symbol)
         balance = await demo.fetch_balance()
 
@@ -38,6 +41,9 @@ async def fetch_market_node(state: TradeState) -> TradeState:
         "timestamp": ticker.get("timestamp"),
         "balance": {"free": free},
     }
+    from agent.market.klines import persist_recent_klines
+
+    await persist_recent_klines(settings.trade_symbol, settings=settings)
     return {**state, "market_data": market_data}
 
 
@@ -126,8 +132,6 @@ async def run_agent_tick(
 ) -> TradeState:
     """Run one full Supervisor → Analysis → Risk → Execute cycle."""
     cfg = settings or get_settings()
-    cfg.data_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = cfg.data_dir / "checkpoints.sqlite"
 
     initial: TradeState = {
         "llm_auto_execute": cfg.llm_auto_execute_effective,
@@ -137,7 +141,7 @@ async def run_agent_tick(
         initial["market_data"] = market_data
 
     graph = build_trade_graph()
-    async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
+    async with checkpointer_context(settings=cfg) as checkpointer:
         app = graph.compile(checkpointer=checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
         result = await app.ainvoke(initial, config)

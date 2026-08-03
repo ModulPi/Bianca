@@ -133,3 +133,17 @@ class PaperValidationRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="running")
     metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ApiKeyRow(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    key_type: Mapped[str] = mapped_column(String, nullable=False)
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_api_keys_type", ApiKeyRow.key_type)

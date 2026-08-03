@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import csv
+import io
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 
 from agent.api.schemas import SessionListResponse, SessionSummaryResponse
 from agent.config import get_settings
@@ -92,3 +95,41 @@ async def summary_close_session(session_id: str) -> SessionSummaryResponse:
         settings=get_settings(),
     )
     return _to_response(data)
+
+
+def _summary_to_csv_row(summary: dict) -> dict[str, str]:
+    trades = summary.get("trades") or {}
+    pnl = summary.get("pnl") or {}
+    usage = summary.get("usage") or {}
+    agent = summary.get("agent") or {}
+    return {
+        "session_id": summary.get("session_id", ""),
+        "started_at": summary.get("started_at", ""),
+        "ended_at": summary.get("ended_at") or "",
+        "tick_count": str(agent.get("tick_count", 0)),
+        "buy_filled": str(trades.get("buy_filled", 0)),
+        "sell_filled": str(trades.get("sell_filled", 0)),
+        "loop_closed": str(trades.get("loop_closed", False)),
+        "realized_usdt": str(pnl.get("realized_usdt", 0)),
+        "total_tokens": str(usage.get("total_tokens", 0)),
+    }
+
+
+@router.get("/sessions/{session_id}/export.csv")
+async def export_session_csv(session_id: str) -> PlainTextResponse:
+    repo = SessionSummaryRepository()
+    row = await repo.get_by_id(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    summary = session_row_to_summary(row)
+    buffer = io.StringIO()
+    fieldnames = list(_summary_to_csv_row(summary).keys())
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerow(_summary_to_csv_row(summary))
+    filename = f"session-{session_id[:8]}.csv"
+    return PlainTextResponse(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

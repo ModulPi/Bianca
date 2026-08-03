@@ -1,18 +1,23 @@
 import type {
   AgentStatus,
+  ApiKeyItem,
+  ApiKeyListResponse,
   BalanceResponse,
   CheckpointHistoryResponse,
   CheckpointThreadListResponse,
   ConfirmPendingResponse,
   DecisionListResponse,
+  FuturesStatus,
   HealthResponse,
   MessageResponse,
+  NotifyStatus,
   PendingSignalListResponse,
   RiskEventListResponse,
+  SecretsReloadResponse,
   SessionListResponse,
   SessionSummary,
-  StrategyListResponse,
   StrategyItem,
+  StrategyListResponse,
   StrategyTickResponse,
   TickerResponse,
   TradeListResponse,
@@ -20,6 +25,7 @@ import type {
   TradingModeResponse,
   ValidationStatus,
 } from "../types/api";
+import { authHeaders } from "./token";
 
 const BASE = "/api/v1";
 
@@ -34,7 +40,7 @@ class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...init?.headers },
     ...init,
   });
   if (!res.ok) {
@@ -53,6 +59,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function download(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { headers: { ...authHeaders() } });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      detail = body.detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   health: () => request<HealthResponse>("/health"),
 
@@ -67,6 +94,8 @@ export const api = {
   summarySession: (id: string) => request<SessionSummary>(`/summary/sessions/${id}`),
   summaryDaily: (date?: string) =>
     request<SessionListResponse>(`/summary/daily${date ? `?date=${date}` : ""}`),
+  exportSessionCsv: (id: string) =>
+    download(`/summary/sessions/${encodeURIComponent(id)}/export.csv`, `session-${id.slice(0, 8)}.csv`),
 
   trades: (params?: { limit?: number; side?: string; status?: string }) => {
     const q = new URLSearchParams();
@@ -115,15 +144,27 @@ export const api = {
   validationStatus: () => request<ValidationStatus>("/validation/status"),
   validationEvaluate: () => request<ValidationStatus>("/validation/evaluate", { method: "POST" }),
   validationReset: () => request<MessageResponse>("/validation/reset", { method: "POST" }),
+  notifyStatus: () => request<NotifyStatus>("/notify/status"),
   notifyTest: () => request<MessageResponse>("/notify/test", { method: "POST" }),
   setTradingMode: (mode: string) =>
     request<TradingModeResponse>("/trading/mode", {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),
+
+  futuresStatus: () => request<FuturesStatus>("/futures/status"),
+
+  listSecrets: () => request<ApiKeyListResponse>("/secrets/keys"),
+  createSecret: (body: { name: string; key_type: string; value: string }) =>
+    request<ApiKeyItem>("/secrets/keys", { method: "POST", body: JSON.stringify(body) }),
+  deleteSecret: (id: string) =>
+    request<MessageResponse>(`/secrets/keys/${id}`, { method: "DELETE" }),
+  reloadSecrets: () => request<SecretsReloadResponse>("/secrets/reload", { method: "POST" }),
+  secretFormats: () => request<Record<string, string>>("/secrets/formats"),
 };
 
 export { ApiError };
+export { getApiToken, setApiToken } from "./token";
 
 export async function fetchDashboardSummary(
   running: boolean,

@@ -135,6 +135,9 @@ async def run_analysis_agent(
     signal = correct_aggressive_action(signal, market_data, cfg)
     signal = cap_signal_amount(signal, market_data, cfg)
     auto_execute = should_auto_execute(signal, cfg)
+    from agent.metrics import record_llm_call
+
+    record_llm_call(provider=cfg.llm_provider, action=signal.action)
 
     decision_id: str | None = None
     if persist:

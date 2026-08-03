@@ -8,7 +8,16 @@ class HealthResponse(BaseModel):
     schema_mode: str = "poc"
     redis: str = "not_configured"
     redis_detail: str | None = None
+    api_auth_enabled: bool = False
+    encryption_configured: bool = False
+    runtime_secrets_loaded: bool = False
+    metrics_enabled: bool = True
+    ollama: str | None = None
+    ollama_detail: str | None = None
     binance_demo: str
+    binance_demo_detail: str | None = None
+    binance_live: str | None = None
+    binance_live_detail: str | None = None
     binance_detail: str | None = None
     llm_provider: str
     llm: str
@@ -320,8 +329,50 @@ class ValidationStatusResponse(BaseModel):
 
 class NotifyStatusResponse(BaseModel):
     telegram_configured: bool
+    email_configured: bool = False
     notify_on_session_close: bool
     notify_on_risk_reject: bool
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str
+    key_type: str
+    value: str
+
+
+class ApiKeyItem(BaseModel):
+    id: str
+    name: str
+    key_type: str
+    masked_value: str
+    created_at: str
+    updated_at: str
+
+
+class ApiKeyListResponse(BaseModel):
+    items: list[ApiKeyItem]
+    total: int
+
+
+class SecretsReloadResponse(BaseModel):
+    message: str
+    binance_configured: bool
+    llm_configured: bool
+    telegram_configured: bool
+
+
+class KlineItem(BaseModel):
+    time: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class KlineListResponse(BaseModel):
+    items: list[KlineItem]
+    total: int
 
 
 class TradingModeRequest(BaseModel):
@@ -337,3 +388,7 @@ class TradingModeResponse(BaseModel):
 class FuturesStatusResponse(BaseModel):
     enabled: bool
     message: str
+    connectivity: str = "unknown"
+    detail: str | None = None
+    futures_u: dict | None = None
+    futures_coin: dict | None = None

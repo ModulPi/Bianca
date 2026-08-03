@@ -104,8 +104,20 @@ export interface UsageSummary {
 export interface HealthResponse {
   status: string;
   database: string;
+  database_backend?: string;
+  schema_mode?: string;
+  redis?: string;
+  api_auth_enabled?: boolean;
+  encryption_configured?: boolean;
+  runtime_secrets_loaded?: boolean;
+  metrics_enabled?: boolean;
   binance_demo: string;
+  binance_demo_detail?: string | null;
+  binance_live?: string | null;
+  binance_live_detail?: string | null;
   binance_detail?: string | null;
+  ollama?: string | null;
+  ollama_detail?: string | null;
   llm_provider: string;
   llm: string;
   llm_detail?: string | null;
@@ -252,4 +264,46 @@ export interface TradingModeResponse {
   mode: string;
   can_enable_live: boolean;
   validation_status: string;
+}
+
+export interface FuturesProbe {
+  status: string;
+  detail?: string | null;
+}
+
+export interface FuturesStatus {
+  enabled: boolean;
+  message: string;
+  connectivity: string;
+  detail?: string | null;
+  futures_u?: FuturesProbe | null;
+  futures_coin?: FuturesProbe | null;
+}
+
+export interface NotifyStatus {
+  telegram_configured: boolean;
+  email_configured: boolean;
+  notify_on_session_close: boolean;
+  notify_on_risk_reject: boolean;
+}
+
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  key_type: string;
+  masked_value: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiKeyListResponse {
+  items: ApiKeyItem[];
+  total: number;
+}
+
+export interface SecretsReloadResponse {
+  message: string;
+  binance_configured: boolean;
+  llm_configured: boolean;
+  telegram_configured: boolean;
 }

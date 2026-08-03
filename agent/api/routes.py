@@ -27,10 +27,10 @@ from agent.api.schemas import (
 from agent.cache.redis_client import redis_health
 from agent.config import get_settings
 from agent.confirmation.service import confirm_pending_signal
-from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo
+from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo, check_binance_live
 from agent.exchange._client import format_binance_error
 from agent.graph.supervisor import run_agent_tick
-from agent.llm.analyzer import check_llm
+from agent.llm.analyzer import check_llm, check_ollama
 from agent.runner import get_runner
 from agent.storage.database import get_engine, schema_mode
 from agent.storage.json_utils import parse_json_field
@@ -52,7 +52,9 @@ async def health() -> HealthResponse:
         db_status = f"error: {exc}"
 
     binance = await check_binance_demo()
+    binance_live = await check_binance_live()
     llm = await check_llm(settings)
+    ollama = await check_ollama(settings)
     redis = await redis_health()
 
     overall = "ok"
@@ -73,7 +75,16 @@ async def health() -> HealthResponse:
         schema_mode=schema_mode(),
         redis=redis.get("status", "not_configured"),
         redis_detail=redis.get("detail"),
+        api_auth_enabled=settings.api_auth_enabled,
+        encryption_configured=settings.encryption_configured,
+        runtime_secrets_loaded=settings.binance_configured or settings.llm_configured,
+        metrics_enabled=settings.metrics_enabled,
+        ollama=ollama.get("status"),
+        ollama_detail=ollama.get("detail"),
         binance_demo=binance["status"],
+        binance_demo_detail=binance.get("detail"),
+        binance_live=binance_live.get("status"),
+        binance_live_detail=binance_live.get("detail"),
         binance_detail=binance.get("detail"),
         llm_provider=settings.llm_provider,
         llm=llm_status,

@@ -18,6 +18,11 @@ async def set_trading_mode(mode: str) -> None:
     if mode not in {"demo", "live"}:
         raise ValueError("mode must be demo or live")
     if mode == "live":
+        cfg = get_settings()
+        if not cfg.live_trading_confirmed:
+            raise PermissionError(
+                "实盘切换被拒绝：请先在 .env 设置 LIVE_TRADING_CONFIRMED=true 并完成模拟验证"
+            )
         from agent.validation.paper_gate import evaluate_validation
 
         result = await evaluate_validation()

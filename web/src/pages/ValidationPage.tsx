@@ -1,10 +1,26 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
-import type { ValidationStatus } from "../types/api";
+import type { FuturesProbe, ValidationStatus } from "../types/api";
+
+function ProbeBadge({ label, probe }: { label: string; probe?: FuturesProbe | null }) {
+  if (!probe) return null;
+  const ok = probe.status === "ok";
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-zinc-400">{label}</span>
+      <span className={ok ? "text-emerald-400" : "text-amber-400"}>
+        {probe.status}
+        {probe.detail ? ` · ${probe.detail}` : ""}
+      </span>
+    </div>
+  );
+}
 
 export default function ValidationPage() {
   const { data, error, loading, refresh } = usePolling(() => api.validationStatus(), 10000);
+  const futuresPoll = usePolling(() => api.futuresStatus(), 15000);
+  const notifyPoll = usePolling(() => api.notifyStatus(), 30000);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -71,8 +87,10 @@ export default function ValidationPage() {
             <h2 className="font-medium text-amber-300">运行模式</h2>
             <p className="text-sm text-zinc-300">当前: {data.trading_mode}</p>
             <p className="text-xs text-zinc-500">
-              Telegram: {data.telegram_configured ? "已配置" : "未配置"} · 合约 API:{" "}
-              {data.futures_enabled ? "已启用" : "PoC stub"}
+              Telegram: {data.telegram_configured ? "已配置" : "未配置"}
+              {notifyPoll.data
+                ? ` · 邮件: ${notifyPoll.data.email_configured ? "已配置" : "未配置"}`
+                : null}
             </p>
             <div className="flex flex-wrap gap-2 pt-2">
               <button
@@ -94,6 +112,20 @@ export default function ValidationPage() {
             </div>
           </section>
         </div>
+      ) : null}
+
+      {futuresPoll.data ? (
+        <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
+          <h2 className="font-medium text-amber-300">合约双栈</h2>
+          <p className="text-sm text-zinc-300">
+            {futuresPoll.data.enabled ? futuresPoll.data.message : futuresPoll.data.message}
+          </p>
+          <p className="text-xs text-zinc-500">连通性: {futuresPoll.data.connectivity}</p>
+          <ProbeBadge label="U 本位 Demo" probe={futuresPoll.data.futures_u} />
+          <ProbeBadge label="币本位 Demo" probe={futuresPoll.data.futures_coin} />
+        </section>
+      ) : futuresPoll.error ? (
+        <p className="text-sm text-rose-400">{futuresPoll.error}</p>
       ) : null}
 
       <div className="flex flex-wrap gap-2">

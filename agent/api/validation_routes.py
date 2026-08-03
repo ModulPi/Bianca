@@ -11,6 +11,9 @@ from agent.api.schemas import (
     ValidationStatusResponse,
 )
 from agent.config import get_settings
+from agent.exchange.futures_coin_demo import FuturesCoinDemoExchange, check_futures_coin
+from agent.exchange.futures_demo import FuturesDemoExchange, check_futures_demo
+from agent.notify.email import send_email
 from agent.notify.telegram import notify_daily_digest, send_telegram
 from agent.summary.aggregator import build_daily_summary_text
 from agent.trading.mode import get_trading_mode, set_trading_mode
@@ -61,6 +64,7 @@ async def notify_status() -> NotifyStatusResponse:
     cfg = get_settings()
     return NotifyStatusResponse(
         telegram_configured=cfg.telegram_configured,
+        email_configured=cfg.email_configured,
         notify_on_session_close=cfg.notify_on_session_close,
         notify_on_risk_reject=cfg.notify_on_risk_reject,
     )
@@ -69,24 +73,39 @@ async def notify_status() -> NotifyStatusResponse:
 @notify_router.post("/test", response_model=MessageResponse)
 async def notify_test() -> MessageResponse:
     cfg = get_settings()
-    if not cfg.telegram_configured:
-        raise HTTPException(status_code=400, detail="Telegram 未配置 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
-    ok = await send_telegram("Bianca 测试通知 — Telegram 通道正常")
-    if not ok:
-        raise HTTPException(status_code=502, detail="Telegram 发送失败，请检查 token/chat_id")
-    return MessageResponse(message="Telegram test message sent")
+    if not cfg.telegram_configured and not cfg.email_configured:
+        raise HTTPException(
+            status_code=400,
+            detail="未配置 Telegram 或 SMTP（TELEGRAM_* / SMTP_* / NOTIFY_EMAIL_TO）",
+        )
+    sent: list[str] = []
+    if cfg.telegram_configured:
+        if await send_telegram("Bianca 测试通知 — Telegram 通道正常"):
+            sent.append("telegram")
+    if cfg.email_configured:
+        if await send_email("Bianca 测试通知", "Email 通道正常"):
+            sent.append("email")
+    if not sent:
+        raise HTTPException(status_code=502, detail="通知发送失败")
+    return MessageResponse(message=f"Test sent via: {', '.join(sent)}")
 
 
 @notify_router.post("/daily-digest", response_model=MessageResponse)
 async def notify_daily() -> MessageResponse:
     cfg = get_settings()
-    if not cfg.telegram_configured:
-        raise HTTPException(status_code=400, detail="Telegram 未配置")
+    if not cfg.telegram_configured and not cfg.email_configured:
+        raise HTTPException(status_code=400, detail="未配置通知通道")
     text = await build_daily_summary_text()
-    ok = await notify_daily_digest(text)
-    if not ok:
-        raise HTTPException(status_code=502, detail="Telegram 发送失败")
-    return MessageResponse(message="Daily digest sent")
+    sent: list[str] = []
+    if cfg.telegram_configured:
+        if await notify_daily_digest(text):
+            sent.append("telegram")
+    if cfg.email_configured:
+        if await send_email("Bianca 日摘要", text):
+            sent.append("email")
+    if not sent:
+        raise HTTPException(status_code=502, detail="通知发送失败")
+    return MessageResponse(message=f"Daily digest sent via: {', '.join(sent)}")
 
 
 trading_router = APIRouter(prefix="/trading", tags=["trading"])
@@ -123,7 +142,37 @@ futures_router = APIRouter(prefix="/futures", tags=["futures"])
 @futures_router.get("/status", response_model=FuturesStatusResponse)
 async def futures_status() -> FuturesStatusResponse:
     cfg = get_settings()
+    u_probe = await check_futures_demo(settings=cfg, live=False)
+    coin_probe = await check_futures_coin(settings=cfg, live=False)
+    if not cfg.futures_enabled:
+        return FuturesStatusResponse(
+            enabled=False,
+            message="合约 API 未启用（FUTURES_ENABLED=false）",
+            connectivity=u_probe["status"],
+            detail=u_probe.get("detail"),
+            futures_u=u_probe,
+            futures_coin=coin_probe,
+        )
     return FuturesStatusResponse(
-        enabled=cfg.futures_enabled,
-        message="合约 API 尚未对接；PoC 仅支持 Demo 现货" if not cfg.futures_enabled else "合约 API 已启用",
+        enabled=True,
+        message="U 本位 + 币本位合约 Demo 已启用",
+        connectivity=u_probe["status"],
+        detail=u_probe.get("detail"),
+        futures_u=u_probe,
+        futures_coin=coin_probe,
     )
+
+
+@futures_router.get("/balance")
+async def futures_balance(market: str = "futures_u") -> dict:
+    cfg = get_settings()
+    if not cfg.futures_enabled:
+        raise HTTPException(status_code=400, detail="FUTURES_ENABLED=false")
+    from agent.trading.mode import get_trading_mode
+
+    live = await get_trading_mode() == "live"
+    if market == "futures_coin":
+        async with FuturesCoinDemoExchange(cfg, live=live) as demo:
+            return await demo.fetch_balance()
+    async with FuturesDemoExchange(cfg, live=live) as demo:
+        return await demo.fetch_balance()

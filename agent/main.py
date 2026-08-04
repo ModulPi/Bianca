@@ -9,6 +9,7 @@ from agent import __version__
 from agent.api.dashboard_routes import router as dashboard_router
 from agent.api.checkpoint_routes import router as checkpoint_router
 from agent.api.market_routes import router as market_router
+from agent.api.metrics_routes import router as metrics_router
 from agent.api.pending_routes import router as pending_router
 from agent.api.routes import router
 from agent.api.summary_routes import router as summary_router

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 
@@ -66,6 +68,46 @@ class TickerResponse(BaseModel):
     bid: float | None = None
     ask: float | None = None
     timestamp: int | None = None
+
+
+class TickerListResponse(BaseModel):
+    items: list[TickerResponse]
+    total: int
+
+
+class DashboardPositionItem(BaseModel):
+    symbol: str
+    base: str
+    free: float
+    used: float
+    mark: float | None = None
+    notional_usdt: float | None = None
+
+
+class WorkerTokenUsageItem(BaseModel):
+    symbol: str
+    llm_calls: int
+    total_tokens: int
+
+
+class DashboardSnapshotResponse(BaseModel):
+    agent: AgentStatusResponse
+    trading_mode: TradingModeResponse
+    validation: ValidationStatusResponse
+    health: HealthResponse
+    usage: UsageSummaryResponse
+    session: SessionSummaryResponse | None = None
+    balance: BalanceResponse | None = None
+    balance_error: str | None = None
+    positions: list[DashboardPositionItem] = []
+    tickers: list[TickerResponse] = []
+    tickers_error: str | None = None
+    open_trades: list[TradeLogItem] = []
+    recent_filled: list[TradeLogItem] = []
+    chart_trades: list[TradeLogItem] = []
+    pending_signals: list[PendingSignalItem] = []
+    risk_events: list[RiskEventItem] = []
+    worker_token_usage: list[WorkerTokenUsageItem] = []
 
 
 class MarketDataInput(BaseModel):

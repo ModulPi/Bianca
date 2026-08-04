@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
-import { useCallback, useMemo } from "react";
-import { api, fetchDashboardSummary, fetchTickersForSymbols } from "../api/client";
+import { api } from "../api/client";
 import ActiveTradesSection from "../components/ActiveTradesSection";
 import AgentControl from "../components/AgentControl";
 import ExecutionModeBanner from "../components/ExecutionModeBanner";
@@ -13,39 +12,16 @@ import WorkerStatusPanel from "../components/WorkerStatusPanel";
 import { usePolling } from "../hooks/usePolling";
 
 export default function DashboardPage() {
-  const statusPoll = usePolling(() => api.agentStatus(), 5000);
-  const status = statusPoll.data;
+  const snapshotPoll = usePolling(() => api.dashboardSnapshot(), 5000);
+  const snap = snapshotPoll.data;
+  const status = snap?.agent ?? null;
   const symbols = status?.symbols ?? [];
-
-  const summaryFetcher = useCallback(async () => {
-    return fetchDashboardSummary(status?.running ?? false);
-  }, [status?.running]);
-  const summaryPoll = usePolling(summaryFetcher, 15000, statusPoll.data !== null);
-
-  const usagePoll = usePolling(() => api.usage(), 60000);
-  const healthPoll = usePolling(() => api.health(), 30000);
-  const tradingModePoll = usePolling(() => api.tradingMode(), 30000);
-  const validationPoll = usePolling(() => api.validationStatus(), 60000);
-
-  const balancePoll = usePolling(() => api.balance(), 20000);
-  const tickersFetcher = useCallback(
-    () => fetchTickersForSymbols(symbols),
-    [symbols.join(",")],
-  );
-  const tickersPoll = usePolling(tickersFetcher, 10000, symbols.length > 0);
-
-  const allTradesPoll = usePolling(() => api.trades({ limit: 100 }), 15000);
-  const submittedPoll = usePolling(() => api.trades({ status: "submitted", limit: 20 }), 15000);
-  const filledPoll = usePolling(() => api.trades({ status: "filled", limit: 10 }), 15000);
-  const riskPoll = usePolling(() => api.riskEvents(10), 15000);
 
   const showConfirm =
     status?.execution_mode === "semi_auto" || status?.degraded;
 
-  const chartTrades = useMemo(
-    () => allTradesPoll.data?.items ?? [],
-    [allTradesPoll.data],
-  );
+  const balanceError = snap?.balance_error ?? snapshotPoll.error;
+  const tickersError = snap?.tickers_error ?? null;
 
   return (
     <div className="space-y-6">
@@ -58,37 +34,46 @@ export default function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-500">
           <span className="rounded bg-zinc-900 px-2 py-1 ring-1 ring-zinc-800">
-            {tradingModePoll.data?.mode ?? "demo"} · {status?.trade_market ?? "crypto"}
+            {snap?.trading_mode.mode ?? "demo"} · {status?.trade_market ?? "crypto"}
           </span>
           {symbols.length > 0 ? (
             <span className="rounded bg-zinc-900 px-2 py-1 ring-1 ring-zinc-800">
               {symbols.join(", ")}
             </span>
           ) : null}
+          <span className="rounded bg-zinc-900 px-2 py-1 ring-1 ring-zinc-800">
+            snapshot 5s
+          </span>
         </div>
       </header>
 
-      <ExecutionModeBanner status={status ?? null} />
+      {snapshotPoll.error && !snap ? (
+        <div className="rounded-xl border border-rose-900/50 bg-rose-950/20 px-4 py-3 text-sm text-rose-300">
+          看板加载失败：{snapshotPoll.error}
+        </div>
+      ) : null}
+
+      <ExecutionModeBanner status={status} />
 
       {/* A | B | C */}
       <div className="grid gap-4 lg:grid-cols-3">
         <AgentControl
-          status={status ?? null}
+          status={status}
           onChange={() => {
-            void statusPoll.refresh();
-            void summaryPoll.refresh();
+            void snapshotPoll.refresh();
           }}
         />
         <TradingModePanel
-          tradingMode={tradingModePoll.data}
-          validation={validationPoll.data}
-          health={healthPoll.data}
+          tradingMode={snap?.trading_mode ?? null}
+          validation={snap?.validation ?? null}
+          health={snap?.health ?? null}
           tradeMarket={status?.trade_market}
         />
         <TokenUsagePanel
-          usage={usagePoll.data}
-          session={summaryPoll.data}
-          error={usagePoll.error}
+          usage={snap?.usage ?? null}
+          session={snap?.session ?? null}
+          workerUsage={snap?.worker_token_usage}
+          error={snapshotPoll.error}
         />
       </div>
 
@@ -103,29 +88,34 @@ export default function DashboardPage() {
       {/* E | F */}
       <div className="grid gap-4 xl:grid-cols-2">
         <PositionsPanel
-          balance={balancePoll.data}
-          tickers={tickersPoll.data ?? []}
+          balance={snap?.balance ?? null}
+          tickers={snap?.tickers ?? []}
           symbols={symbols}
-          session={summaryPoll.data}
-          error={balancePoll.error ?? tickersPoll.error}
+          session={snap?.session ?? null}
+          snapshotPositions={snap?.positions}
+          error={balanceError ?? tickersError}
         />
         <PnLPanel
-          summary={summaryPoll.data}
-          agentStatus={status ?? null}
-          tradesForChart={chartTrades}
+          summary={snap?.session ?? null}
+          agentStatus={status}
+          tradesForChart={snap?.chart_trades ?? []}
         />
       </div>
 
       {/* G */}
       <ActiveTradesSection
-        submitted={submittedPoll.data?.items ?? []}
-        recentFilled={filledPoll.data?.items ?? []}
+        submitted={snap?.open_trades ?? []}
+        recentFilled={snap?.recent_filled ?? []}
         showConfirmQueue={showConfirm ?? false}
-        riskEvents={riskPoll.data?.items ?? []}
+        riskEvents={snap?.risk_events ?? []}
       />
 
       {/* H */}
-      <TickerPanel tickers={tickersPoll.data ?? []} loading={tickersPoll.loading} />
+      <TickerPanel
+        tickers={snap?.tickers ?? []}
+        loading={snapshotPoll.loading && !snap}
+        error={tickersError}
+      />
 
       <p className="text-xs text-zinc-600">
         审计：

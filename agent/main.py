@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import __version__
+from agent.api.dashboard_routes import router as dashboard_router
 from agent.api.checkpoint_routes import router as checkpoint_router
 from agent.api.metrics_routes import router as metrics_router
 from agent.api.pending_routes import router as pending_router
@@ -71,6 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(metrics_router)
 app.include_router(summary_router, prefix="/api/v1")
 app.include_router(checkpoint_router, prefix="/api/v1")

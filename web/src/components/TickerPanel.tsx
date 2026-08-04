@@ -3,15 +3,19 @@ import type { TickerResponse } from "../types/api";
 interface TickerPanelProps {
   tickers: TickerResponse[];
   loading?: boolean;
+  error?: string | null;
 }
 
-export default function TickerPanel({ tickers, loading }: TickerPanelProps) {
+export default function TickerPanel({ tickers, loading, error }: TickerPanelProps) {
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium text-zinc-300">实时行情</h2>
         <span className="text-[10px] text-zinc-600">轻量 ticker · 非 K 线终端 · 10s 刷新</span>
       </div>
+      {error ? (
+        <p className="mb-2 text-xs text-rose-400">{error}</p>
+      ) : null}
       {loading && tickers.length === 0 ? (
         <p className="text-sm text-zinc-500">加载中…</p>
       ) : tickers.length === 0 ? (

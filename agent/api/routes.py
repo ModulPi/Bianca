@@ -4,6 +4,7 @@ import json
 
 from fastapi import APIRouter, HTTPException
 
+from agent.api.health_service import build_health_response
 from agent.api.schemas import (
     AgentStatusResponse,
     AgentTickRequest,
@@ -18,21 +19,28 @@ from agent.api.schemas import (
     MessageResponse,
     RiskEventItem,
     RiskEventListResponse,
+    TickerListResponse,
     TickerResponse,
     TradeListResponse,
     TradeLogItem,
     TradeSignalResponse,
     UsageSummaryResponse,
 )
-from agent.cache.redis_client import redis_health
 from agent.config import get_settings
 from agent.confirmation.service import confirm_pending_signal
-from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo, check_binance_live
 from agent.exchange._client import format_binance_error
+from agent.exchange.quotes import (
+    balance_to_response,
+    fetch_exchange_balance,
+    fetch_exchange_ticker,
+    fetch_exchange_tickers,
+    format_exchange_error,
+    ticker_to_response,
+)
+from agent.exchange.spot_demo import SpotDemoExchange
 from agent.graph.supervisor import run_agent_tick
-from agent.llm.analyzer import check_llm, check_ollama
+from agent.llm.analyzer import check_llm
 from agent.runner import get_runner
-from agent.storage.database import get_engine, schema_mode
 from agent.storage.json_utils import parse_json_field
 from agent.storage.repository import DecisionRepository, RiskEventRepository, TradeRepository
 
@@ -41,87 +49,14 @@ router = APIRouter(prefix="/api/v1")
 
 @router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    settings = get_settings()
-
-    db_status = "ok"
-    try:
-        engine = get_engine()
-        async with engine.connect() as conn:
-            await conn.exec_driver_sql("SELECT 1")
-    except Exception as exc:  # noqa: BLE001
-        db_status = f"error: {exc}"
-
-    binance = await check_binance_demo()
-    binance_live = await check_binance_live()
-    llm = await check_llm(settings)
-    ollama = await check_ollama(settings)
-    redis = await redis_health()
-
-    overall = "ok"
-    if db_status != "ok" or binance["status"] == "error" or llm["status"] == "error":
-        overall = "degraded"
-    if redis.get("status") == "error":
-        overall = "degraded"
-
-    llm_status = llm["status"]
-    llm_detail = llm.get("detail")
-    if llm_status == "not_configured":
-        llm_detail = llm_detail or "Set LLM_API_KEY in .env to enable P2"
-
-    return HealthResponse(
-        status=overall,
-        database=db_status,
-        database_backend=settings.database_backend,
-        schema_mode=schema_mode(),
-        redis=redis.get("status", "not_configured"),
-        redis_detail=redis.get("detail"),
-        api_auth_enabled=settings.api_auth_enabled,
-        encryption_configured=settings.encryption_configured,
-        runtime_secrets_loaded=settings.binance_configured or settings.llm_configured,
-        metrics_enabled=settings.metrics_enabled,
-        ollama=ollama.get("status"),
-        ollama_detail=ollama.get("detail"),
-        binance_demo=binance["status"],
-        binance_demo_detail=binance.get("detail"),
-        binance_live=binance_live.get("status"),
-        binance_live_detail=binance_live.get("detail"),
-        binance_detail=binance.get("detail"),
-        llm_provider=settings.llm_provider,
-        llm=llm_status,
-        llm_detail=llm_detail,
-    )
+    return await build_health_response()
 
 
 @router.get("/agent/status", response_model=AgentStatusResponse)
 async def agent_status() -> AgentStatusResponse:
-    snap = await get_runner().get_snapshot()
-    workers = [
-        {
-            "symbol": w.symbol,
-            "last_tick": w.last_tick,
-            "last_status": w.last_status,
-            "last_error": w.last_error,
-            "tick_count": w.tick_count,
-        }
-        for w in snap.workers.values()
-    ]
-    return AgentStatusResponse(
-        running=snap.running,
-        last_tick=snap.last_tick,
-        last_status=snap.last_status,
-        last_error=snap.last_error,
-        tick_count=snap.tick_count,
-        daily_pnl=snap.daily_pnl,
-        tick_interval=snap.tick_interval,
-        llm_auto_execute=snap.llm_auto_execute,
-        session_id=snap.session_id,
-        session_started_at=snap.session_started_at,
-        execution_mode=snap.execution_mode,
-        trade_market=snap.trade_market,
-        symbols=snap.symbols,
-        workers=workers,
-        degraded=snap.degraded,
-    )
+    from agent.dashboard.snapshot import build_agent_status
+
+    return await build_agent_status()
 
 
 @router.post("/agent/start", response_model=MessageResponse)
@@ -373,15 +308,34 @@ async def exchange_balance() -> BalanceResponse:
     settings = get_settings()
     _require_binance(settings)
     try:
-        async with SpotDemoExchange(settings) as demo:
-            balance = await demo.fetch_balance()
+        balance = await fetch_exchange_balance(settings)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=format_binance_error(exc)) from exc
-    return BalanceResponse(
-        total={k: float(v) for k, v in balance.get("total", {}).items() if v},
-        free={k: float(v) for k, v in balance.get("free", {}).items() if v},
-        used={k: float(v) for k, v in balance.get("used", {}).items() if v},
-    )
+        raise HTTPException(status_code=502, detail=format_exchange_error(exc)) from exc
+    return BalanceResponse(**balance_to_response(balance))
+
+
+def _parse_ticker_symbols(symbols: str | None, settings) -> list[str]:
+    if symbols:
+        parsed = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        if not parsed:
+            raise HTTPException(status_code=422, detail="symbols must not be empty")
+        if len(parsed) > 20:
+            raise HTTPException(status_code=422, detail="symbols max 20")
+        return parsed
+    return settings.resolved_agent_symbols or [settings.trade_symbol]
+
+
+@router.get("/exchange/tickers", response_model=TickerListResponse)
+async def exchange_tickers(symbols: str | None = None) -> TickerListResponse:
+    settings = get_settings()
+    _require_binance(settings)
+    sym_list = _parse_ticker_symbols(symbols, settings)
+    try:
+        raw_list = await fetch_exchange_tickers(settings, sym_list)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=format_exchange_error(exc)) from exc
+    items = [TickerResponse(**ticker_to_response(t)) for t in raw_list]
+    return TickerListResponse(items=items, total=len(items))
 
 
 @router.get("/exchange/ticker", response_model=TickerResponse)
@@ -390,17 +344,10 @@ async def exchange_ticker(symbol: str | None = None) -> TickerResponse:
     _require_binance(settings)
     sym = symbol or settings.trade_symbol
     try:
-        async with SpotDemoExchange(settings) as demo:
-            ticker = await demo.fetch_ticker(sym)
+        ticker = await fetch_exchange_ticker(settings, sym)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=format_binance_error(exc)) from exc
-    return TickerResponse(
-        symbol=ticker.get("symbol"),
-        last=ticker.get("last"),
-        bid=ticker.get("bid"),
-        ask=ticker.get("ask"),
-        timestamp=ticker.get("timestamp"),
-    )
+        raise HTTPException(status_code=502, detail=format_exchange_error(exc)) from exc
+    return TickerResponse(**ticker_to_response(ticker))
 
 
 @router.post("/strategies/{strategy_id}/confirm", response_model=ConfirmPendingResponse)

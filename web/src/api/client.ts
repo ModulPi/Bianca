@@ -25,6 +25,8 @@ import type {
   UsageSummary,
   TradingModeResponse,
   ValidationStatus,
+  DashboardSnapshot,
+  TickerListResponse,
 } from "../types/api";
 import { authHeaders } from "./token";
 
@@ -89,6 +91,8 @@ export const api = {
   agentStop: () => request<MessageResponse>("/agent/stop", { method: "POST" }),
   agentRecover: () => request<MessageResponse>("/agent/recover", { method: "POST" }),
 
+  dashboardSnapshot: () => request<DashboardSnapshot>("/dashboard/snapshot"),
+
   summaryCurrent: () => request<SessionSummary>("/summary/session/current"),
   summaryLatest: () => request<SessionSummary>("/summary/session/latest"),
   summarySessions: (limit = 20, offset = 0) =>
@@ -112,6 +116,13 @@ export const api = {
   balance: () => request<BalanceResponse>("/exchange/balance"),
   ticker: (symbol?: string) =>
     request<TickerResponse>(`/exchange/ticker${symbol ? `?symbol=${symbol}` : ""}`),
+  tickers: (symbols?: string[]) => {
+    const qs =
+      symbols && symbols.length > 0
+        ? `?symbols=${encodeURIComponent(symbols.join(","))}`
+        : "";
+    return request<TickerListResponse>(`/exchange/tickers${qs}`);
+  },
   decisions: (limit = 50) => request<DecisionListResponse>(`/decisions?limit=${limit}`),
   riskEvents: (limit = 50) => request<RiskEventListResponse>(`/risk/events?limit=${limit}`),
   checkpointThreads: (limit = 50) =>
@@ -196,8 +207,6 @@ export async function fetchTickersForSymbols(symbols: string[]): Promise<TickerR
     const single = await api.ticker();
     return single.symbol ? [single] : [];
   }
-  const results = await Promise.allSettled(symbols.map((s) => api.ticker(s)));
-  return results
-    .filter((r): r is PromiseFulfilledResult<TickerResponse> => r.status === "fulfilled")
-    .map((r) => r.value);
+  const res = await api.tickers(symbols);
+  return res.items;
 }

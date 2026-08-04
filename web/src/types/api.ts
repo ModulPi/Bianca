@@ -153,6 +153,46 @@ export interface TickerResponse {
   timestamp: number | null;
 }
 
+export interface TickerListResponse {
+  items: TickerResponse[];
+  total: number;
+}
+
+export interface DashboardPosition {
+  symbol: string;
+  base: string;
+  free: number;
+  used: number;
+  mark: number | null;
+  notional_usdt: number | null;
+}
+
+export interface WorkerTokenUsage {
+  symbol: string;
+  llm_calls: number;
+  total_tokens: number;
+}
+
+export interface DashboardSnapshot {
+  agent: AgentStatus;
+  trading_mode: TradingModeResponse;
+  validation: ValidationStatus;
+  health: HealthResponse;
+  usage: UsageSummary;
+  session: SessionSummary | null;
+  balance: BalanceResponse | null;
+  balance_error: string | null;
+  positions: DashboardPosition[];
+  tickers: TickerResponse[];
+  tickers_error: string | null;
+  open_trades: TradeLogItem[];
+  recent_filled: TradeLogItem[];
+  chart_trades: TradeLogItem[];
+  pending_signals: PendingSignalItem[];
+  risk_events: RiskEventItem[];
+  worker_token_usage: WorkerTokenUsage[];
+}
+
 export interface KlineItem {
   time: string;
   open: number;

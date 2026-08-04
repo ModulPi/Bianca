@@ -1,4 +1,4 @@
-import type { BalanceResponse, SessionSummary, TickerResponse } from "../types/api";
+import type { BalanceResponse, DashboardPosition, SessionSummary, TickerResponse } from "../types/api";
 import { baseFromSymbol } from "../utils/symbol";
 
 export interface PositionRow {
@@ -15,6 +15,7 @@ interface PositionsPanelProps {
   tickers: TickerResponse[];
   symbols: string[];
   session: SessionSummary | null;
+  snapshotPositions?: DashboardPosition[];
   error?: string | null;
 }
 
@@ -41,6 +42,7 @@ export default function PositionsPanel({
   tickers,
   symbols,
   session,
+  snapshotPositions,
   error,
 }: PositionsPanelProps) {
   if (error) {
@@ -53,7 +55,15 @@ export default function PositionsPanel({
 
   const usdtFree = balance?.free.USDT ?? 0;
   const usdtUsed = balance?.used.USDT ?? 0;
-  const rows = buildPositionRows(balance, tickers, symbols);
+  const rows: PositionRow[] =
+    snapshotPositions?.map((p) => ({
+      symbol: p.symbol,
+      base: p.base,
+      free: p.free,
+      used: p.used,
+      mark: p.mark,
+      notionalUsdt: p.notional_usdt,
+    })) ?? buildPositionRows(balance, tickers, symbols);
   const totalNotional =
     rows.reduce((sum, r) => sum + (r.notionalUsdt ?? 0), 0) + usdtFree;
 

@@ -1,13 +1,14 @@
-import type { SessionSummary, UsageSummary } from "../types/api";
+import type { SessionSummary, UsageSummary, WorkerTokenUsage } from "../types/api";
 import StatCard from "./StatCard";
 
 interface TokenUsagePanelProps {
   usage: UsageSummary | null;
   session: SessionSummary | null;
+  workerUsage?: WorkerTokenUsage[];
   error?: string | null;
 }
 
-export default function TokenUsagePanel({ usage, session, error }: TokenUsagePanelProps) {
+export default function TokenUsagePanel({ usage, session, workerUsage, error }: TokenUsagePanelProps) {
   if (error) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-rose-400 h-full">
@@ -50,6 +51,29 @@ export default function TokenUsagePanel({ usage, session, error }: TokenUsagePan
       ) : (
         <p className="mt-3 text-xs text-zinc-500">暂无会话 Token 数据</p>
       )}
+      {workerUsage && workerUsage.length > 0 ? (
+        <div className="mt-3 overflow-x-auto">
+          <p className="mb-2 text-[11px] text-zinc-500">按 Worker 分摊</p>
+          <table className="w-full text-left text-[11px]">
+            <thead>
+              <tr className="border-b border-zinc-800 text-zinc-500">
+                <th className="py-1 pr-2">Symbol</th>
+                <th className="py-1 pr-2">calls</th>
+                <th className="py-1">tokens</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workerUsage.map((w) => (
+                <tr key={w.symbol} className="border-b border-zinc-800/40">
+                  <td className="py-1 pr-2 mono text-amber-300">{w.symbol}</td>
+                  <td className="py-1 pr-2">{w.llm_calls}</td>
+                  <td className="py-1">{w.total_tokens.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   );
 }

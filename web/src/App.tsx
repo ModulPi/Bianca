@@ -3,16 +3,9 @@ import { useSearchParams, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import CheckpointsPage from "./pages/CheckpointsPage";
 import DashboardPage from "./pages/DashboardPage";
-import DecisionsPage from "./pages/DecisionsPage";
-import RiskPage from "./pages/RiskPage";
 import SessionDetailPage from "./pages/SessionDetailPage";
 import SessionsPage from "./pages/SessionsPage";
-import StrategiesPage from "./pages/StrategiesPage";
 import TradesPage from "./pages/TradesPage";
-import UsagePage from "./pages/UsagePage";
-import ValidationPage from "./pages/ValidationPage";
-import MarketPage from "./pages/MarketPage";
-import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
   return (
@@ -22,21 +15,13 @@ export default function App() {
         <Route path="trades" element={<TradesPage />} />
         <Route path="sessions" element={<SessionsPage />} />
         <Route path="sessions/:id" element={<SessionDetailPage />} />
-        <Route path="strategies" element={<StrategiesPage />} />
-        <Route path="usage" element={<UsagePage />} />
-        <Route path="decisions" element={<DecisionsPage />} />
-        <Route path="risk" element={<RiskPage />} />
         <Route path="checkpoints" element={<CheckpointsPageWithQuery />} />
-        <Route path="validation" element={<ValidationPage />} />
-        <Route path="market" element={<MarketPage />} />
-        <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );
 }
 
-/** 支持 /checkpoints?thread=xxx 预选线程 */
 function CheckpointsPageWithQuery() {
   const [params] = useSearchParams();
   const thread = params.get("thread");

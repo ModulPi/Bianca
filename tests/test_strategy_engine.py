@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+pytestmark = pytest.mark.skip(reason="策略模板 API 已从 Agent 产品范围移除")
+
 from agent.config import Settings, clear_settings_cache
 from agent.main import app
 from agent.storage.database import close_db, init_db

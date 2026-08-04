@@ -6,6 +6,8 @@ from agent.main import app
 from agent.storage.database import close_db, init_db
 from agent.storage.repository import StrategyRepository
 
+pytestmark = pytest.mark.skip(reason="策略模板 API 已从 Agent 产品范围移除")
+
 
 @pytest.fixture
 async def client():

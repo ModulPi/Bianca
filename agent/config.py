@@ -40,9 +40,15 @@ class Settings(BaseSettings):
     stop_loss_usdt: float = Field(default=25.0, gt=0)
     pending_signal_ttl_minutes: int = Field(default=30, ge=1)
 
-    # Agent
+    # Agent — 自主交易引擎（非交易平台）
     agent_tick_interval: int = Field(default=300, ge=10)
     trade_symbol: str = "BTCUSDT"
+    agent_symbols: str = "BTCUSDT"
+    agent_max_parallel: int = Field(default=8, ge=1)
+    trade_market: Literal["crypto", "a_share", "us_stock"] = "crypto"
+    auto_degrade_enabled: bool = True
+    auto_degrade_failures: int = Field(default=3, ge=1)
+    agent_stop_on_loop_closed: bool = False
     # conservative | aggressive — PoC 激进模式优先完成买卖闭环（模拟盘）
     trading_style: Literal["conservative", "aggressive"] = "conservative"
     poc_min_trade_usdt: float = Field(default=10.0, gt=0)
@@ -101,6 +107,8 @@ class Settings(BaseSettings):
         "smtp_use_tls",
         "metrics_enabled",
         "live_trading_confirmed",
+        "auto_degrade_enabled",
+        "agent_stop_on_loop_closed",
         mode="before",
     )
     @classmethod
@@ -114,6 +122,12 @@ class Settings(BaseSettings):
         if self.execution_mode:
             return self.execution_mode
         return "auto" if self.llm_auto_execute else "signal_only"
+
+    @property
+    def resolved_agent_symbols(self) -> list[str]:
+        raw = self.agent_symbols.strip() or self.trade_symbol
+        parts = [p.strip().upper() for p in raw.split(",") if p.strip()]
+        return parts or [self.trade_symbol.upper()]
 
     @property
     def llm_auto_execute_effective(self) -> bool:

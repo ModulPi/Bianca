@@ -10,6 +10,18 @@ export interface AgentStatus {
   session_id: string | null;
   session_started_at: string | null;
   execution_mode?: string;
+  trade_market?: string;
+  symbols?: string[];
+  workers?: WorkerStatus[];
+  degraded?: boolean;
+}
+
+export interface WorkerStatus {
+  symbol: string;
+  last_tick?: string | null;
+  last_status?: string | null;
+  last_error?: string | null;
+  tick_count?: number;
 }
 
 export interface SessionAgentInfo {

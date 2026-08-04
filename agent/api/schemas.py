@@ -24,6 +24,14 @@ class HealthResponse(BaseModel):
     llm_detail: str | None = None
 
 
+class WorkerStatusItem(BaseModel):
+    symbol: str
+    last_tick: str | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+    tick_count: int = 0
+
+
 class AgentStatusResponse(BaseModel):
     running: bool
     last_tick: str | None = None
@@ -36,6 +44,10 @@ class AgentStatusResponse(BaseModel):
     session_id: str | None = None
     session_started_at: str | None = None
     execution_mode: str = "auto"
+    trade_market: str = "crypto"
+    symbols: list[str] = []
+    workers: list[WorkerStatusItem] = []
+    degraded: bool = False
 
 
 class MessageResponse(BaseModel):

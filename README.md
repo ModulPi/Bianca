@@ -2,126 +2,49 @@
 
 **[English](./README.en.md)** | 简体中文
 
-面向 C 端用户的加密货币自动交易 Agent 平台。PoC 阶段聚焦：**LLM 自主决策 + 币安 Demo 现货 + LangGraph 编排**。
+**自主交易 Agent 引擎** — 非交易平台。聚焦 LLM 自主决策、24×7 稳定运行、多 symbol 并行执行；异常时自动降级 semi_auto 供人工介入。
 
-## 当前阶段：MVP
+## 定位
 
-PoC 已验收；MVP 提供 Web 控制台、策略模板、半自动确认、完整风控、汇总管理、模拟门禁与 Telegram/邮件通知。可选 `--profile mvp` 启用 PostgreSQL + Redis 双栈。
+| 做 | 不做 |
+|----|------|
+| Agent 24×7 自主买卖 | 交易终端 / K 线看盘 |
+| 多 Worker 并行（`AGENT_SYMBOLS`） | 策略商城 / 模板 UI |
+| 失败自动降级 + 人工确认 | C 端用户运营向功能 |
+| 决策审计（回放 / 会话） | 以人工下单为主的产品 |
 
-| 项 | PoC 范围 |
-|----|----------|
-| 交易所 | 币安 Demo 现货 |
-| 决策 | LLM 自主（BUY/SELL/HOLD） |
-| LLM | **DeepSeek API（默认）**，配置切换 Ollama |
-| 编排 | LangGraph Supervisor |
-| 风控 | 单笔上限 + 日亏损熔断 |
-| 部署 | Docker(API) + SQLite |
-| 界面 | **Web 控制台**（`web/`）+ CLI / curl |
+**市场：** 加密（已实现）· A 股 / 美股（适配层钩子，未实现）
 
-## 技术栈
-
-| 层级 | PoC | MVP（后续） |
-|------|-----|------------|
-| Agent | LangGraph + DeepSeek/Ollama | + 策略模板 |
-| 后端 | FastAPI + Python | 同 |
-| 交易所 | ccxt (Demo 现货) | + 合约 |
-| 数据库 | SQLite | PostgreSQL + TimescaleDB |
-| 前端 | React + TypeScript（M7 `web/`） | 同 + 半自动确认 |
-
-## 文档目录
-
-```
-docs/
-├── PRD-Bianca.md
-├── 用户故事-Bianca.md
-├── system-design/
-│   ├── 系统设计文档-Bianca.md    # 含 LLM 切换配置说明
-│   ├── 技术选型建议-Bianca.md
-│   └── 容量规划报告-Bianca.md
-├── outline-design/
-│   ├── 架构设计/架构设计文档-Bianca.md
-│   └── 数据库设计/
-│       ├── 数据库设计文档-Bianca.md
-│       ├── 数据字典.md
-│       └── sql/
-│           ├── 001_poc_sqlite.sql
-│           └── 002_mvp_postgres.sql
-└── module-scheduling/
-    ├── 开发排期计划-Bianca.md
-    ├── 里程碑清单-Bianca.md
-    ├── 甘特图描述-Bianca.md
-    └── 资源分配建议-Bianca.md
-```
-
-## 快速开始（PoC）
+## 快速开始
 
 ```bash
-# 1. 配置环境变量
 cp .env.example .env
-# 编辑 .env：BINANCE_API_KEY/SECRET、LLM_API_KEY、BINANCE_PROXY（如需）
+# BINANCE_* · LLM_* · AGENT_SYMBOLS=BTCUSDT,ETHUSDT
 
-# 2. 启动 API（Docker）
 docker compose up -d --build
-
-# 3. 一键启动 Agent 并等待健康检查
-python start_poc.py
-
-# 或分步：
 curl http://127.0.0.1:8000/api/v1/health
 curl -X POST http://127.0.0.1:8000/api/v1/agent/start
-
-# 4. 等待买卖闭环（可选）
-python run_poc_closure.py
-
-# 5. 查看汇总
-curl http://127.0.0.1:8000/api/v1/usage
-curl http://127.0.0.1:8000/api/v1/trades
-curl http://127.0.0.1:8000/api/v1/summary/session/latest
-curl http://127.0.0.1:8000/api/v1/checkpoints/threads/default/history
+curl http://127.0.0.1:8000/api/v1/agent/status
+# 自动降级后人工恢复：
+# curl -X POST http://127.0.0.1:8000/api/v1/agent/recover
 ```
 
-**切换本地 Ollama：** 修改 `.env` 中 `LLM_PROVIDER=ollama` 及相关 URL/模型，重启 API 即可。
-
-## 快速开始（MVP 双栈）
+## 运维 Web（极简）
 
 ```bash
-# PostgreSQL + TimescaleDB + Redis
-docker compose --profile mvp -f docker-compose.yml -f docker-compose.mvp.yml up -d --build
-
-# .env 中设置（可选）
-# API_TOKEN=...          # 启用 API 鉴权
-# ENCRYPTION_KEY=...     # 加密存储密钥（/api/v1/secrets/keys）
-# SMTP_* / NOTIFY_EMAIL_* # 邮件通知
-
-curl http://127.0.0.1:8000/api/v1/health
-curl -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8000/api/v1/summary/session/latest
-curl http://127.0.0.1:8000/api/v1/summary/sessions/{session_id}/export.csv
-curl http://127.0.0.1:8000/api/v1/market/klines?symbol=BTCUSDT
-curl http://127.0.0.1:9090   # Prometheus（profile mvp）
-curl http://127.0.0.1:3001   # Grafana（admin/bianca）
-curl http://127.0.0.1:8000/metrics
-curl -X POST http://127.0.0.1:8000/api/v1/secrets/reload
-
-# 实盘切换（需模拟验证通过 + LIVE_TRADING_CONFIRMED=true）
-# curl -X POST http://127.0.0.1:8000/api/v1/trading/mode -d '{"mode":"live"}'
+docker compose up -d api && cd web && npm install && npm run dev
+# http://127.0.0.1:3000 — Agent 启停 · Worker 状态 · 降级确认队列 · 审计
 ```
 
-## Web 控制台（M7）
+## 核心配置
 
-```bash
-# 开发模式（热更新，/api 代理到 :8000）
-docker compose up -d api
-cd web && npm install && npm run dev
-# http://127.0.0.1:3000
-
-# 生产模式（nginx 静态 + API 反代，Docker 一体）
-docker compose up -d --build
-# Web http://127.0.0.1:3000  ·  API http://127.0.0.1:8000
-```
-
-页面：仪表盘（持仓/盈亏曲线/Agent 启停）、交易、会话、决策回放、LLM 决策、风控事件、Token 消耗。
-
-半自动确认（M6）：`EXECUTION_MODE=semi_auto` 时，BUY/SELL 经 WebSocket 推送至控制台确认队列，确认后走风控与执行；30 分钟超时自动丢弃。
+| 变量 | 说明 |
+|------|------|
+| `AGENT_SYMBOLS` | 并行 Worker 交易对，逗号分隔 |
+| `TRADE_MARKET` | `crypto`（默认）/ `a_share` / `us_stock` |
+| `EXECUTION_MODE` | `auto` / `semi_auto` / `signal_only` |
+| `AUTO_DEGRADE_ENABLED` | 连续失败自动切 semi_auto |
+| `AGENT_STOP_ON_LOOP_CLOSED` | 默认 `false`（24×7 不因 PoC 闭环停止） |
 
 ## 许可证
 

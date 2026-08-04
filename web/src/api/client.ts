@@ -87,6 +87,7 @@ export const api = {
   agentStatus: () => request<AgentStatus>("/agent/status"),
   agentStart: () => request<MessageResponse>("/agent/start", { method: "POST" }),
   agentStop: () => request<MessageResponse>("/agent/stop", { method: "POST" }),
+  agentRecover: () => request<MessageResponse>("/agent/recover", { method: "POST" }),
 
   summaryCurrent: () => request<SessionSummary>("/summary/session/current"),
   summaryLatest: () => request<SessionSummary>("/summary/session/latest"),

@@ -95,7 +95,16 @@ async def health() -> HealthResponse:
 @router.get("/agent/status", response_model=AgentStatusResponse)
 async def agent_status() -> AgentStatusResponse:
     snap = await get_runner().get_snapshot()
-    settings = get_settings()
+    workers = [
+        {
+            "symbol": w.symbol,
+            "last_tick": w.last_tick,
+            "last_status": w.last_status,
+            "last_error": w.last_error,
+            "tick_count": w.tick_count,
+        }
+        for w in snap.workers.values()
+    ]
     return AgentStatusResponse(
         running=snap.running,
         last_tick=snap.last_tick,
@@ -107,7 +116,11 @@ async def agent_status() -> AgentStatusResponse:
         llm_auto_execute=snap.llm_auto_execute,
         session_id=snap.session_id,
         session_started_at=snap.session_started_at,
-        execution_mode=settings.resolved_execution_mode,
+        execution_mode=snap.execution_mode,
+        trade_market=snap.trade_market,
+        symbols=snap.symbols,
+        workers=workers,
+        degraded=snap.degraded,
     )
 
 
@@ -123,8 +136,16 @@ async def agent_start() -> MessageResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return MessageResponse(
-        message=f"Agent runner started (interval={settings.agent_tick_interval}s)"
+        message=f"Agent runner started market={settings.trade_market} symbols={settings.resolved_agent_symbols}"
     )
+
+
+@router.post("/agent/recover", response_model=MessageResponse)
+async def agent_recover() -> MessageResponse:
+    """人工恢复：清除自动降级状态（需 EXECUTION_MODE=auto）。"""
+    runner = get_runner()
+    await runner.recover()
+    return MessageResponse(message="Agent degradation cleared; effective mode follows EXECUTION_MODE")
 
 
 @router.post("/agent/stop", response_model=MessageResponse)

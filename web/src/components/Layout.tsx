@@ -1,26 +1,19 @@
 import { NavLink, Outlet } from "react-router-dom";
 
 const links = [
-  { to: "/", label: "仪表盘" },
-  { to: "/trades", label: "交易" },
+  { to: "/", label: "运维" },
+  { to: "/trades", label: "成交" },
   { to: "/sessions", label: "会话" },
-  { to: "/strategies", label: "策略" },
   { to: "/checkpoints", label: "回放" },
-  { to: "/decisions", label: "决策" },
-  { to: "/risk", label: "风控" },
-  { to: "/market", label: "K 线" },
-  { to: "/validation", label: "门禁" },
-  { to: "/settings", label: "设置" },
-  { to: "/usage", label: "Token" },
 ];
 
 export default function Layout() {
   return (
     <div className="min-h-screen flex">
-      <aside className="w-56 shrink-0 border-r border-zinc-800 bg-zinc-900/50 p-4 flex flex-col gap-6">
+      <aside className="w-52 shrink-0 border-r border-zinc-800 bg-zinc-900/50 p-4 flex flex-col gap-6">
         <div>
           <p className="text-xs uppercase tracking-widest text-zinc-500">Bianca</p>
-          <h1 className="text-lg font-semibold text-amber-400">Console</h1>
+          <h1 className="text-lg font-semibold text-amber-400">Agent Ops</h1>
         </div>
         <nav className="flex flex-col gap-1">
           {links.map((link) => (
@@ -40,7 +33,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <p className="mt-auto text-xs text-zinc-600">M8 · Web Console</p>
+        <p className="mt-auto text-xs text-zinc-600">自主交易 Agent · 非交易平台</p>
       </aside>
       <main className="flex-1 p-6 overflow-auto">
         <Outlet />

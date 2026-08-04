@@ -53,6 +53,7 @@ async def test_api_token_blocks_protected_routes():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Web 密钥 CRUD 已从 Agent 产品范围移除")
 async def test_secrets_api_requires_encryption_key(client):
     resp = await client.post(
         "/api/v1/secrets/keys",
@@ -62,6 +63,7 @@ async def test_secrets_api_requires_encryption_key(client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Web 密钥 CRUD 已从 Agent 产品范围移除")
 async def test_secrets_api_create_and_list():
     clear_settings_cache()
     with patch.dict("os.environ", {"ENCRYPTION_KEY": "mvp-test-key"}, clear=False):
@@ -173,6 +175,7 @@ def test_merge_patch_env_priority():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Web 密钥 CRUD 已从 Agent 产品范围移除")
 async def test_runtime_secrets_reload_after_create():
     clear_settings_cache()
     await init_db()
@@ -211,6 +214,7 @@ def test_resolve_trade_market():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Web 密钥 CRUD 已从 Agent 产品范围移除")
 async def test_secrets_reload_endpoint():
     clear_settings_cache()
     await init_db()

@@ -29,7 +29,11 @@ from agent.exchange.quotes import (
     format_exchange_error,
     ticker_to_response,
 )
-from agent.llm.prompts import base_asset_for_symbol
+from agent.dashboard.positions import (
+    build_dashboard_positions,
+    cash_asset_for_market,
+    enrich_session_positions,
+)
 from agent.runner import get_runner
 from agent.storage.json_utils import parse_json_field
 from agent.storage.repository import (
@@ -162,32 +166,9 @@ def _build_positions(
     balance: BalanceResponse | None,
     tickers: list[TickerResponse],
     symbols: list[str],
+    trade_market: str,
 ) -> list[DashboardPositionItem]:
-    if balance is None:
-        return []
-    ticker_map = {t.symbol: t for t in tickers if t.symbol}
-    target_symbols = symbols or [t.symbol for t in tickers if t.symbol]
-    rows: list[DashboardPositionItem] = []
-    for symbol in target_symbols:
-        if not symbol:
-            continue
-        base = base_asset_for_symbol(symbol)
-        free = balance.free.get(base, 0.0)
-        used = balance.used.get(base, 0.0)
-        ticker = ticker_map.get(symbol)
-        mark = ticker.last if ticker else None
-        notional = free * mark if mark is not None else None
-        rows.append(
-            DashboardPositionItem(
-                symbol=symbol,
-                base=base,
-                free=free,
-                used=used,
-                mark=mark,
-                notional_usdt=notional,
-            )
-        )
-    return rows
+    return build_dashboard_positions(balance, tickers, symbols, trade_market)
 
 
 async def _worker_token_usage(
@@ -278,13 +259,44 @@ async def _fetch_usage_cached() -> UsageSummaryResponse:
     return await get_or_set("dashboard:usage", 60.0, load)
 
 
-async def _resolve_session_cached(agent: AgentStatusResponse) -> SessionSummaryResponse | None:
-    if agent.running and agent.session_id:
-        key = f"dashboard:session:{agent.session_id}"
+async def _resolve_session_cached(
+    agent: AgentStatusResponse,
+    *,
+    balance: BalanceResponse | None = None,
+    tickers: list[TickerResponse] | None = None,
+    symbols: list[str] | None = None,
+) -> SessionSummaryResponse | None:
+    settings = get_settings()
+    if agent.running and agent.session_id and agent.session_started_at:
+        sym_list = symbols or agent.symbols or settings.resolved_agent_symbols
 
         async def load() -> SessionSummaryResponse | None:
-            return await _resolve_session(agent)
+            data = await build_session_summary(
+                session_id=agent.session_id,
+                started_at=agent.session_started_at,
+                ended_at=None,
+                tick_count=agent.tick_count,
+                last_status=agent.last_status,
+                settings=settings,
+            )
+            if balance is not None and sym_list:
+                items = build_dashboard_positions(
+                    balance,
+                    tickers or [],
+                    sym_list,
+                    agent.trade_market,
+                )
+                cash_key = cash_asset_for_market(agent.trade_market)
+                cash_free = balance.free.get(cash_key, balance.free.get("USDT", 0.0))
+                data["positions"] = enrich_session_positions(
+                    data["positions"],
+                    items=items,
+                    trade_market=agent.trade_market,
+                    cash_free=cash_free,
+                )
+            return SessionSummaryResponse(**data)
 
+        key = f"dashboard:session:{agent.session_id}"
         return await get_or_set(key, 15.0, load)
     return await _resolve_session(agent)
 
@@ -295,12 +307,16 @@ async def build_dashboard_snapshot() -> DashboardSnapshotResponse:
     health = await _fetch_health_cached()
     trading_mode, validation = await _fetch_gate_cached()
     usage = await _fetch_usage_cached()
-    session = await _resolve_session_cached(agent)
-
     symbols = agent.symbols or settings.resolved_agent_symbols
     balance, balance_error = await _fetch_balance_cached(settings)
     tickers, tickers_error = await _fetch_tickers_cached(settings, symbols)
-    positions = _build_positions(balance, tickers, symbols)
+    session = await _resolve_session_cached(
+        agent,
+        balance=balance,
+        tickers=tickers,
+        symbols=symbols,
+    )
+    positions = _build_positions(balance, tickers, symbols, agent.trade_market)
 
     trade_repo = TradeRepository()
     open_rows = await trade_repo.list_recent(limit=20, status="submitted")

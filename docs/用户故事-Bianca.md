@@ -106,14 +106,14 @@
 
 **验收标准：**
 
-- [ ] 看板展示 Agent 启停、执行模式、降级状态、并行 Worker 表
-- [ ] 展示各 symbol 轻量实时 ticker（last/bid/ask），非 K 线终端
-- [ ] 展示仓位（USDT + base 资产 + 名义价值）与 PnL 四分项（已实现/未实现/现金净流入/合计）
-- [ ] 展示 demo/live 模式与模拟验证状态（只读）
-- [ ] 展示进行中交易（submitted/pending/filled）与风控拒绝
-- [ ] 降级/semi_auto 时展示待确认队列（WS + 确认/拒绝）
-- [ ] 展示 Token 用量（今日 + 当前会话）
-- [ ] 快捷入口：成交明细、会话汇总、决策回放
+- [x] 看板展示 Agent 启停、执行模式、降级状态、并行 Worker 表
+- [x] 展示各 symbol 轻量实时 ticker（last/bid/ask），非 K 线终端
+- [x] 展示仓位（USDT + base 资产 + 名义价值）与 PnL 四分项（已实现/未实现/现金净流入/合计）
+- [x] 展示 demo/live 模式与模拟验证状态（只读）
+- [x] 展示进行中交易（submitted/pending/filled）与风控拒绝
+- [x] 降级/semi_auto 时展示待确认队列（WS + 确认/拒绝）
+- [x] 展示 Token 用量（今日 + 当前会话）
+- [x] 快捷入口：成交明细、会话汇总、决策回放
 
 **优先级：** MVP P0 | **Story Point：** 13
 

@@ -82,6 +82,9 @@ class DashboardPositionItem(BaseModel):
     used: float
     mark: float | None = None
     notional_usdt: float | None = None
+    market: str = "crypto"
+    quote_currency: str = "USDT"
+    available: bool = True
 
 
 class WorkerTokenUsageItem(BaseModel):
@@ -254,11 +257,27 @@ class SessionPnLInfo(BaseModel):
     daily_pnl_legacy: float
 
 
+class SessionPositionItem(BaseModel):
+    symbol: str
+    base: str
+    free: float = 0.0
+    used: float = 0.0
+    mark_price: float | None = None
+    notional_quote: float | None = None
+    market: str = "crypto"
+    quote_currency: str = "USDT"
+    available: bool = True
+
+
 class SessionPositionsInfo(BaseModel):
     base_asset: str
     base_free: float
     usdt_free: float
     mark_price: float | None = None
+    market: str = "crypto"
+    quote_currency: str = "USDT"
+    cash_free: float | None = None
+    items: list[SessionPositionItem] = []
 
 
 class SessionSummaryResponse(BaseModel):

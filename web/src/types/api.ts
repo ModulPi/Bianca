@@ -55,11 +55,27 @@ export interface SessionPnLInfo {
   daily_pnl_legacy: number;
 }
 
+export interface SessionPositionItem {
+  symbol: string;
+  base: string;
+  free: number;
+  used?: number;
+  mark_price: number | null;
+  notional_quote: number | null;
+  market: string;
+  quote_currency: string;
+  available: boolean;
+}
+
 export interface SessionPositionsInfo {
   base_asset: string;
   base_free: number;
   usdt_free: number;
   mark_price: number | null;
+  market?: string;
+  quote_currency?: string;
+  cash_free?: number;
+  items?: SessionPositionItem[];
 }
 
 export interface SessionSummary {
@@ -165,6 +181,9 @@ export interface DashboardPosition {
   used: number;
   mark: number | null;
   notional_usdt: number | null;
+  market: string;
+  quote_currency: string;
+  available: boolean;
 }
 
 export interface WorkerTokenUsage {

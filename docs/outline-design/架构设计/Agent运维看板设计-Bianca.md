@@ -278,25 +278,26 @@ GET /api/v1/dashboard/snapshot
 
 ## 7. 验收标准（US-M01 对齐）
 
-- [ ] 单页看板展示 A–H 八个模块（可折叠次要模块）
-- [ ] Agent 运行 / 停止 / 恢复 auto 可操作
-- [ ] 降级时确认队列自动展开，WS + 轮询双通道
-- [ ] 盈亏展示 realized / unrealized / cash_flow / total 四分项
-- [ ] Token 展示今日 + 当前会话消耗
-- [ ] 多 Worker 时每个 symbol 独立一行状态
-- [ ] demo / live 模式与验证状态只读展示
-- [ ] 刷新符合第 4 节策略，页面无明显卡顿
+- [x] 单页看板展示 A–H 八个模块（可折叠次要模块）
+- [x] Agent 运行 / 停止 / 恢复 auto 可操作
+- [x] 降级时确认队列自动展开，WS + snapshot 双通道（含 ETag 304）
+- [x] 盈亏展示 realized / unrealized / cash_flow / total 四分项
+- [x] Token 展示今日 + 当前会话消耗（含 Worker 分摊）
+- [x] 多 Worker 时每个 symbol 独立一行状态
+- [x] demo / live 模式与验证状态只读展示
+- [x] 刷新符合第 4 节策略（snapshot 分层 TTL + If-None-Match），页面无明显卡顿
 
 ---
 
 ## 8. 实施分期
 
-| 阶段 | 内容 | 优先级 |
-|------|------|--------|
-| **P0** | 复用现有 API 拼装看板（当前 `web/` 运维页扩展） | 立即 |
-| **P1** | `GET /dashboard/snapshot` 聚合 API | 高 |
-| **P1** | 批量 ticker、按 Worker Token 分摊 | 中 |
-| **P2** | A 股/美股仓位字段扩展（适配层落地后） | 低 |
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| **P0** | 复用现有 API 拼装看板（`web/` 运维页扩展） | ✅ |
+| **P1** | `GET /dashboard/snapshot` 聚合 API | ✅ |
+| **P1** | 批量 ticker、按 Worker Token 分摊 | ✅ |
+| **P1** | ETag / If-None-Match、分层 TTL、变更 invalidate | ✅ |
+| **P2** | 多 symbol 仓位 + 市场字段（crypto/A股/美股钩子） | ✅ 字段就绪，A股/美股适配待落地 |
 
 ---
 

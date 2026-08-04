@@ -8,6 +8,9 @@ export interface PositionRow {
   used: number;
   mark: number | null;
   notionalUsdt: number | null;
+  market?: string;
+  quoteCurrency?: string;
+  available?: boolean;
 }
 
 interface PositionsPanelProps {
@@ -16,6 +19,7 @@ interface PositionsPanelProps {
   symbols: string[];
   session: SessionSummary | null;
   snapshotPositions?: DashboardPosition[];
+  tradeMarket?: string;
   error?: string | null;
 }
 
@@ -33,8 +37,14 @@ export function buildPositionRows(
     const used = balance?.used[base] ?? 0;
     const mark = tickerMap.get(symbol)?.last ?? null;
     const notionalUsdt = mark != null ? free * mark : null;
-    return { symbol, base, free, used, mark, notionalUsdt };
+    return { symbol, base, free, used, mark, notionalUsdt, available: true };
   });
+}
+
+function cashKeyForQuote(quote: string): string {
+  if (quote === "CNY") return "CNY";
+  if (quote === "USD") return "USD";
+  return "USDT";
 }
 
 export default function PositionsPanel({
@@ -43,6 +53,7 @@ export default function PositionsPanel({
   symbols,
   session,
   snapshotPositions,
+  tradeMarket,
   error,
 }: PositionsPanelProps) {
   if (error) {
@@ -53,8 +64,15 @@ export default function PositionsPanel({
     );
   }
 
-  const usdtFree = balance?.free.USDT ?? 0;
-  const usdtUsed = balance?.used.USDT ?? 0;
+  const quoteCurrency =
+    snapshotPositions?.[0]?.quote_currency ??
+    session?.positions?.quote_currency ??
+    "USDT";
+  const market = tradeMarket ?? snapshotPositions?.[0]?.market ?? session?.positions?.market ?? "crypto";
+  const cashKey = cashKeyForQuote(quoteCurrency);
+  const cashFree = balance?.free[cashKey] ?? balance?.free.USDT ?? 0;
+  const cashUsed = balance?.used[cashKey] ?? balance?.used.USDT ?? 0;
+
   const rows: PositionRow[] =
     snapshotPositions?.map((p) => ({
       symbol: p.symbol,
@@ -63,27 +81,33 @@ export default function PositionsPanel({
       used: p.used,
       mark: p.mark,
       notionalUsdt: p.notional_usdt,
+      market: p.market,
+      quoteCurrency: p.quote_currency,
+      available: p.available,
     })) ?? buildPositionRows(balance, tickers, symbols);
-  const totalNotional =
-    rows.reduce((sum, r) => sum + (r.notionalUsdt ?? 0), 0) + usdtFree;
+
+  const totalNotional = rows.reduce((sum, r) => sum + (r.notionalUsdt ?? 0), 0) + cashFree;
 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-zinc-300">仓位快照</h2>
+        <h2 className="text-sm font-medium text-zinc-300">
+          仓位快照
+          <span className="ml-2 text-[10px] font-normal text-zinc-500">{market}</span>
+        </h2>
         <span className="text-xs text-zinc-500">
-          合计 ≈ {totalNotional.toFixed(2)} USDT
+          合计 ≈ {totalNotional.toFixed(2)} {quoteCurrency}
         </span>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div>
-          <p className="text-xs text-zinc-500">USDT 可用</p>
-          <p className="mono text-lg font-semibold">{usdtFree.toFixed(2)}</p>
+          <p className="text-xs text-zinc-500">{quoteCurrency} 可用</p>
+          <p className="mono text-lg font-semibold">{cashFree.toFixed(2)}</p>
         </div>
         <div>
-          <p className="text-xs text-zinc-500">USDT 冻结</p>
-          <p className="mono text-lg font-semibold text-zinc-400">{usdtUsed.toFixed(2)}</p>
+          <p className="text-xs text-zinc-500">{quoteCurrency} 冻结</p>
+          <p className="mono text-lg font-semibold text-zinc-400">{cashUsed.toFixed(2)}</p>
         </div>
         {session?.positions ? (
           <div>
@@ -91,6 +115,11 @@ export default function PositionsPanel({
             <p className="mono text-sm text-zinc-300">
               {session.positions.base_free} {session.positions.base_asset}
             </p>
+            {(session.positions.items?.length ?? 0) > 1 ? (
+              <p className="text-[10px] text-zinc-600">
+                +{session.positions.items!.length - 1} symbol
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -106,13 +135,21 @@ export default function PositionsPanel({
                 <th className="py-2 pr-3">可用</th>
                 <th className="py-2 pr-3">冻结</th>
                 <th className="py-2 pr-3">标记价</th>
-                <th className="py-2">名义 USDT</th>
+                <th className="py-2">名义 {quoteCurrency}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.symbol} className="border-b border-zinc-800/50">
-                  <td className="py-2 pr-3 mono text-amber-300">{r.symbol}</td>
+                <tr
+                  key={r.symbol}
+                  className={`border-b border-zinc-800/50 ${r.available === false ? "opacity-50" : ""}`}
+                >
+                  <td className="py-2 pr-3 mono text-amber-300">
+                    {r.symbol}
+                    {r.available === false ? (
+                      <span className="ml-1 text-[10px] text-zinc-500">未接入</span>
+                    ) : null}
+                  </td>
                   <td className="py-2 pr-3 mono">{r.free.toFixed(6)}</td>
                   <td className="py-2 pr-3 mono text-zinc-500">{r.used.toFixed(6)}</td>
                   <td className="py-2 pr-3 mono">{r.mark?.toLocaleString() ?? "—"}</td>

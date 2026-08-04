@@ -129,8 +129,9 @@ export default function DashboardPage() {
             tickers={snap?.tickers ?? []}
             symbols={symbols}
             session={snap?.session ?? null}
-            snapshotPositions={snap?.positions}
-            error={balanceError ?? tickersError}
+          snapshotPositions={snap?.positions}
+          tradeMarket={status?.trade_market}
+          error={balanceError ?? tickersError}
           />
           <PnLPanel
             summary={snap?.session ?? null}

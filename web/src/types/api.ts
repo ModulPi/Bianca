@@ -167,6 +167,11 @@ export interface TickerResponse {
   bid: number | null;
   ask: number | null;
   timestamp: number | null;
+  change_24h?: number | null;
+  change_24h_pct?: number | null;
+  high_24h?: number | null;
+  low_24h?: number | null;
+  volume_24h?: number | null;
 }
 
 export interface TickerListResponse {

@@ -9,6 +9,8 @@ from agent.api.schemas import (
     AgentStatusResponse,
     AgentTickRequest,
     AgentTickResponse,
+    AnalysisReportItem,
+    AnalysisReportListResponse,
     AnalysisRequest,
     AnalysisResponse,
     BalanceResponse,
@@ -43,7 +45,7 @@ from agent.graph.supervisor import run_agent_tick
 from agent.llm.analyzer import check_llm
 from agent.runner import get_runner
 from agent.storage.json_utils import parse_json_field
-from agent.storage.repository import DecisionRepository, RiskEventRepository, TradeRepository
+from agent.storage.repository import AnalysisReportRepository, DecisionRepository, RiskEventRepository, TradeRepository
 
 router = APIRouter(prefix="/api/v1")
 
@@ -131,13 +133,7 @@ async def _resolve_market_data(body: AnalysisRequest) -> dict:
                 "Tip: pass market_data in POST body when Binance is unreachable."
             ),
         ) from exc
-    return {
-        "symbol": ticker.get("symbol", sym),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-    }
+    return ticker_to_response(ticker)
 
 
 @router.post("/agent/tick", response_model=AgentTickResponse)
@@ -182,12 +178,15 @@ async def list_trades(
 ) -> TradeListResponse:
     if limit < 1 or limit > 200:
         raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    query_status = status
+    if query_status == "in_progress":
+        query_status = "submitted"
     repo = TradeRepository()
     rows = await repo.list_recent(
         limit=limit,
         symbol=symbol,
         side=side,
-        status=status,
+        status=query_status,
     )
     items = [
         TradeLogItem(
@@ -272,9 +271,30 @@ async def run_analysis(body: AnalysisRequest | None = None) -> AnalysisResponse:
         auto_execute=result.auto_execute,
         llm_auto_execute=settings.llm_auto_execute,
         decision_id=result.decision_id,
+        analysis_report_id=result.analysis_report_id,
         raw_output=result.raw_output or None,
         usage=result.usage,
     )
+
+
+@router.get("/analysis/reports", response_model=AnalysisReportListResponse)
+async def list_analysis_reports(limit: int = 20) -> AnalysisReportListResponse:
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+    rows = await AnalysisReportRepository().list_recent(limit=limit)
+    items = [
+        AnalysisReportItem(
+            id=r.id,
+            model_used=r.model_used,
+            content=r.content,
+            suggestions=parse_json_field(r.suggestions),
+            confidence=r.confidence,
+            symbols=r.symbols,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+    return AnalysisReportListResponse(items=items, total=len(items))
 
 
 @router.get("/decisions", response_model=DecisionListResponse)

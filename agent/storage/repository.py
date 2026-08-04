@@ -15,6 +15,7 @@ from agent.storage.constants import (
 from agent.storage.database import get_session_factory, schema_mode
 from agent.storage.models import (
     AgentConfigRow,
+    AnalysisReportRow,
     ApiKeyRow,
     DecisionLog,
     PaperValidationRow,
@@ -865,3 +866,43 @@ class KlineRepository:
             }
             for r in rows
         ]
+
+
+class AnalysisReportRepository:
+    async def save(
+        self,
+        *,
+        report_id: str,
+        model_used: str,
+        content: str,
+        suggestions: list[dict],
+        confidence: float | None,
+        symbols: str,
+    ) -> AnalysisReportRow:
+        row = AnalysisReportRow(
+            id=report_id,
+            model_used=model_used,
+            content=content,
+            suggestions=json.dumps(suggestions, ensure_ascii=False),
+            confidence=confidence,
+            symbols=symbols,
+            created_at=_utc_now(),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def list_recent(self, limit: int = 20) -> list[AnalysisReportRow]:
+        stmt = select(AnalysisReportRow).order_by(AnalysisReportRow.created_at.desc()).limit(limit)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_by_id(self, report_id: str) -> AnalysisReportRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(AnalysisReportRow, report_id)

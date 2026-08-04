@@ -76,12 +76,8 @@ async def sample_ticker(symbol: str | None = None) -> dict[str, Any]:
     settings = get_settings()
     if not settings.binance_configured:
         raise RuntimeError("BINANCE_API_KEY/SECRET not configured")
+    from agent.exchange.quotes import ticker_to_response
+
     async with MarketStream(settings) as stream:
         ticker = await stream.fetch_latest_ticker(symbol)
-    return {
-        "symbol": ticker.get("symbol"),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-    }
+    return ticker_to_response(ticker)

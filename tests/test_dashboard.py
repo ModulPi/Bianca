@@ -49,7 +49,10 @@ async def test_dashboard_snapshot_shape(client):
 
 @pytest.mark.asyncio
 async def test_exchange_tickers_without_binance(client):
-    resp = await client.get("/api/v1/exchange/tickers?symbols=BTCUSDT,ETHUSDT")
+    with patch("agent.api.routes.get_settings") as mock_settings:
+        mock_settings.return_value.binance_configured = False
+        mock_settings.return_value.trade_symbol = "BTCUSDT"
+        resp = await client.get("/api/v1/exchange/tickers?symbols=BTCUSDT,ETHUSDT")
     assert resp.status_code == 503
 
 

@@ -68,6 +68,11 @@ class TickerResponse(BaseModel):
     bid: float | None = None
     ask: float | None = None
     timestamp: int | None = None
+    change_24h: float | None = None
+    change_24h_pct: float | None = None
+    high_24h: float | None = None
+    low_24h: float | None = None
+    volume_24h: float | None = None
 
 
 class TickerListResponse(BaseModel):
@@ -85,6 +90,12 @@ class DashboardPositionItem(BaseModel):
     market: str = "crypto"
     quote_currency: str = "USDT"
     available: bool = True
+
+
+class DashboardPositionsResponse(BaseModel):
+    items: list[DashboardPositionItem]
+    total: int
+    generated_at: str
 
 
 class WorkerTokenUsageItem(BaseModel):
@@ -144,8 +155,24 @@ class AnalysisResponse(BaseModel):
     auto_execute: bool
     llm_auto_execute: bool
     decision_id: str | None = None
+    analysis_report_id: str | None = None
     raw_output: str | None = None
     usage: dict | None = None
+
+
+class AnalysisReportItem(BaseModel):
+    id: str
+    model_used: str
+    content: str
+    suggestions: list[dict]
+    confidence: float | None = None
+    symbols: str = ""
+    created_at: str
+
+
+class AnalysisReportListResponse(BaseModel):
+    items: list[AnalysisReportItem]
+    total: int
 
 
 class DecisionLogItem(BaseModel):

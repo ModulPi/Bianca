@@ -36,8 +36,8 @@
 | 项 | 说明 |
 |----|------|
 | A 股 / 美股适配 | **延后**；`MarketAdapter` 占位已就绪 |
-| MarketStream 接入 Agent | `exchange/market_stream.py` 待接入决策链 |
-| analysis_reports 落库 | LLM 分析报告持久化 |
+| MarketStream 接入 Agent | ✅ 可选 `MARKET_STREAM_ENABLED` + WS 缓存 |
+| analysis_reports 落库 | ✅ `GET /api/v1/analysis/reports` |
 | 多 symbol Agent 端到端 | ✅ prompt / 风控 / 仓位按 Worker symbol |
 
 ---

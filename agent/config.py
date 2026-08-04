@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     klines_interval: str = "1m"
     default_trade_market: Literal["spot", "futures_u", "futures_coin"] = "spot"
     metrics_enabled: bool = True
+    market_stream_enabled: bool = False
+    market_stream_cache_ttl: int = Field(default=30, ge=5)
 
     @field_validator("llm_auto_execute", mode="before")
     @classmethod
@@ -104,6 +106,7 @@ class Settings(BaseSettings):
         "paper_validation_require_loop",
         "futures_enabled",
         "klines_enabled",
+        "market_stream_enabled",
         "smtp_use_tls",
         "metrics_enabled",
         "live_trading_confirmed",

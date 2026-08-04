@@ -20,7 +20,9 @@ async def client():
 
 @pytest.mark.asyncio
 async def test_market_klines_requires_binance(client):
-    resp = await client.get("/api/v1/market/klines?symbol=BTCUSDT&interval=1m&limit=30")
+    with patch("agent.api.market_routes.get_settings") as mock_settings:
+        mock_settings.return_value.binance_configured = False
+        resp = await client.get("/api/v1/market/klines?symbol=BTCUSDT&interval=1m&limit=30")
     assert resp.status_code == 503
 
 

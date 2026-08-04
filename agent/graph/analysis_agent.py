@@ -8,7 +8,7 @@ from agent.graph.state import TradeState
 from agent.llm.analyzer import MarketAnalyzer
 from agent.llm.prompts import base_asset_for_symbol, normalize_symbol, resolve_worker_symbol
 from agent.llm.schemas import AnalysisResult, TradeSignal
-from agent.storage.repository import DecisionRepository
+from agent.storage.repository import DecisionRepository, AnalysisReportRepository
 
 
 def should_auto_execute(signal: TradeSignal, settings: Settings | None = None) -> bool:
@@ -142,6 +142,7 @@ async def run_analysis_agent(
     record_llm_call(provider=cfg.llm_provider, action=signal.action)
 
     decision_id: str | None = None
+    analysis_report_id: str | None = None
     if persist:
         decision_id = str(uuid.uuid4())
         repo = DecisionRepository()
@@ -155,6 +156,16 @@ async def run_analysis_agent(
             completion_tokens=(usage or {}).get("completion_tokens"),
             total_tokens=(usage or {}).get("total_tokens"),
         )
+        analysis_report_id = str(uuid.uuid4())
+        symbol = resolve_worker_symbol(market_data=market_data, settings=cfg)
+        await AnalysisReportRepository().save(
+            report_id=analysis_report_id,
+            model_used=f"{cfg.llm_provider}:{cfg.llm_model}",
+            content=raw_output or signal.reason,
+            suggestions=[signal.to_dict()],
+            confidence=signal.confidence,
+            symbols=symbol,
+        )
 
     return AnalysisResult(
         signal=signal,
@@ -163,6 +174,7 @@ async def run_analysis_agent(
         prompt_summary=prompt_summary,
         auto_execute=auto_execute,
         decision_id=decision_id,
+        analysis_report_id=analysis_report_id,
         usage=usage,
     )
 

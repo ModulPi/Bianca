@@ -90,6 +90,10 @@ class AgentRunner:
 
             await set_active_session(self._snapshot.session_id, self._snapshot.session_started_at)
         self._task = asyncio.create_task(self._loop(), name="bianca-agent-runner")
+        if settings.market_stream_enabled:
+            from agent.market.stream_manager import get_stream_manager
+
+            await get_stream_manager().start(self._snapshot.symbols, settings)
         logger.info(
             "Agent runner started market=%s symbols=%s interval=%ss session=%s",
             settings.trade_market,
@@ -102,6 +106,10 @@ class AgentRunner:
         if not self._snapshot.running and self._task is None:
             return
         self._stop_event.set()
+        if get_settings().market_stream_enabled:
+            from agent.market.stream_manager import get_stream_manager
+
+            await get_stream_manager().stop()
         if self._task is not None:
             self._task.cancel()
             try:

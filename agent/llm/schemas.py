@@ -39,4 +39,5 @@ class AnalysisResult(BaseModel):
     prompt_summary: str
     auto_execute: bool
     decision_id: str | None = None
+    analysis_report_id: str | None = None
     usage: dict[str, Any] | None = None

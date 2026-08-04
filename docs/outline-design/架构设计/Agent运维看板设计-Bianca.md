@@ -195,7 +195,7 @@ GET /api/v1/dashboard/positions?symbols=BTCUSDT,ETHUSDT
 | 展示项 | 数据源 | 刷新 |
 |--------|--------|------|
 | 各 symbol last / bid / ask | `GET /exchange/ticker?symbol=` | 5–10s |
-| 24h 涨跌（后续） | 需 ticker 扩展或 ccxt 字段 | — |
+| 24h 涨跌 / 高低 | `TickerResponse.change_24h_pct` 等（ccxt ticker） | 5–10s |
 
 **不做：** 全屏 K 线终端、画线工具、订单簿深度。
 
@@ -246,10 +246,11 @@ GET /api/v1/dashboard/positions?symbols=BTCUSDT,ETHUSDT
 | 实盘信息 | `/trading/mode`, `/validation/status`, `/health` | — |
 | Token | `/usage`, `/summary/session/current\|latest` | 按 Worker 分摊 Token |
 | Worker 表 | `/agent/status.workers[]` | — |
-| 仓位 | `/exchange/balance`, `/exchange/ticker`, `summary.positions` | `/dashboard/positions` 聚合 |
+| 仓位 | `/exchange/balance`, `/exchange/ticker`, `summary.positions` | ✅ `/dashboard/positions` |
 | 收益 | `/summary/session/*`, `/agent/status.daily_pnl` | — |
-| 进行中交易 | `/trades`, `/pending-signals`, `/risk/events` | `/trades?status=in_progress` 语义统一 |
-| 实时行情 | `/exchange/ticker` | 批量 ticker 一次请求 |
+| 进行中交易 | `/trades`, `/pending-signals`, `/risk/events` | ✅ `/trades?status=in_progress` → `submitted` |
+| 实时行情 | `/exchange/ticker`, `/exchange/tickers` | — |
+| AI 分析报告 | — | ✅ `GET /analysis/reports` |
 | 审计 | `/checkpoints/*`, `/summary/sessions` | — |
 
 **建议新增（P1 实现）：**
@@ -292,7 +293,7 @@ GET /api/v1/dashboard/snapshot
 
 ## 7. 验收标准（US-M01 对齐）
 
-- [x] 单页看板展示 A–H 八个模块（可折叠次要模块）
+- [x] 单页看板展示 A–I 九个模块（可折叠次要模块；含 K 线买卖点）
 - [x] Agent 运行 / 停止 / 恢复 auto 可操作
 - [x] 降级时确认队列自动展开，WS + snapshot 双通道（含 ETag 304）
 - [x] 盈亏展示 realized / unrealized / cash_flow / total 四分项

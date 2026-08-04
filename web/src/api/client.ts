@@ -190,3 +190,14 @@ export async function fetchDashboardSummary(
     throw err;
   }
 }
+
+export async function fetchTickersForSymbols(symbols: string[]): Promise<TickerResponse[]> {
+  if (symbols.length === 0) {
+    const single = await api.ticker();
+    return single.symbol ? [single] : [];
+  }
+  const results = await Promise.allSettled(symbols.map((s) => api.ticker(s)));
+  return results
+    .filter((r): r is PromiseFulfilledResult<TickerResponse> => r.status === "fulfilled")
+    .map((r) => r.value);
+}

@@ -43,6 +43,15 @@ export default function AgentControl({ status, onChange }: AgentControlProps) {
               上次 tick · {new Date(status.last_tick).toLocaleString()}
             </p>
           ) : null}
+          {status?.session_started_at ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              会话开始 · {new Date(status.session_started_at).toLocaleString()}
+            </p>
+          ) : null}
+          <p className="mt-1 text-xs text-zinc-500">
+            模式 · {status?.execution_mode ?? "—"} · ticks {status?.tick_count ?? 0}
+            {status?.tick_interval ? ` · 间隔 ${status.tick_interval}s` : ""}
+          </p>
           {status?.last_error ? (
             <p className="mt-1 text-xs text-rose-400">{status.last_error}</p>
           ) : null}

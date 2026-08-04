@@ -8,9 +8,10 @@
 
 | 做 | 不做 |
 |----|------|
-| Agent 24×7 自主买卖 | 交易终端 / K 线看盘 |
+| Agent 24×7 自主买卖 | 交易终端 / K 线看盘 / 手动下单 |
 | 多 Worker 并行（`AGENT_SYMBOLS`） | 策略商城 / 模板 UI |
-| 失败自动降级 + 人工确认 | C 端用户运营向功能 |
+| **Agent 运维看板**（监控·仓位·收益·Token） | C 端交易平台式控制台 |
+| 失败自动降级 + 人工确认 | 以人工操作为主的产品 |
 | 决策审计（回放 / 会话） | 以人工下单为主的产品 |
 
 **市场：** 加密（已实现）· A 股 / 美股（适配层钩子，未实现）
@@ -29,12 +30,15 @@ curl http://127.0.0.1:8000/api/v1/agent/status
 # curl -X POST http://127.0.0.1:8000/api/v1/agent/recover
 ```
 
-## 运维 Web（极简）
+## 运维 Web（Agent 看板）
 
 ```bash
 docker compose up -d api && cd web && npm install && npm run dev
-# http://127.0.0.1:3000 — Agent 启停 · Worker 状态 · 降级确认队列 · 审计
+# http://127.0.0.1:3000
 ```
+
+看板设计（实时行情 · 仓位 · 进行中交易 · 实盘信息 · 收益 · Worker 状态 · Token）：  
+→ [docs/outline-design/架构设计/Agent运维看板设计-Bianca.md](./docs/outline-design/架构设计/Agent运维看板设计-Bianca.md)
 
 ## 核心配置
 

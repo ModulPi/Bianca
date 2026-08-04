@@ -152,7 +152,7 @@ Runner      Supervisor    Analysis     LLM API     Risk       Execute     Demo A
 
 | 组件 | MVP 新增 |
 |------|----------|
-| 前端 | React SPA @ :3000 |
+| 前端 | React **Agent 运维看板** @ :3000（见 [Agent运维看板设计](./Agent运维看板设计-Bianca.md)） |
 | Agent | + Strategy Agent；+ 半自动 confirm 路径 |
 | 数据 | PostgreSQL + TimescaleDB + Redis |
 | 交易所 | + U 本位/币本位合约 |

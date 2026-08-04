@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 
 const links = [
-  { to: "/", label: "运维" },
+  { to: "/", label: "看板" },
   { to: "/trades", label: "成交" },
   { to: "/sessions", label: "会话" },
   { to: "/checkpoints", label: "回放" },

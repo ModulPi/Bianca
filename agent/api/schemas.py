@@ -108,6 +108,7 @@ class DashboardSnapshotResponse(BaseModel):
     pending_signals: list[PendingSignalItem] = []
     risk_events: list[RiskEventItem] = []
     worker_token_usage: list[WorkerTokenUsageItem] = []
+    generated_at: str
 
 
 class MarketDataInput(BaseModel):

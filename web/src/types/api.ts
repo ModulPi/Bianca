@@ -191,6 +191,7 @@ export interface DashboardSnapshot {
   pending_signals: PendingSignalItem[];
   risk_events: RiskEventItem[];
   worker_token_usage: WorkerTokenUsage[];
+  generated_at: string;
 }
 
 export interface KlineItem {

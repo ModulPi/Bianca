@@ -186,6 +186,39 @@ export const api = {
 export { ApiError };
 export { getApiToken, setApiToken } from "./token";
 
+export type SnapshotFetchResult =
+  | { kind: "unchanged" }
+  | { kind: "updated"; data: DashboardSnapshot; etag: string };
+
+export async function fetchDashboardSnapshot(
+  etag?: string | null,
+): Promise<SnapshotFetchResult> {
+  const headers: Record<string, string> = { ...authHeaders() };
+  if (etag) {
+    headers["If-None-Match"] = etag;
+  }
+  const res = await fetch(`${BASE}/dashboard/snapshot`, { headers });
+  if (res.status === 304) {
+    return { kind: "unchanged" };
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      detail = body.detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const nextEtag = res.headers.get("ETag");
+  if (!nextEtag) {
+    throw new ApiError(502, "snapshot response missing ETag");
+  }
+  const data = (await res.json()) as DashboardSnapshot;
+  return { kind: "updated", data, etag: nextEtag };
+}
+
 export async function fetchDashboardSummary(
   running: boolean,
 ): Promise<SessionSummary | null> {

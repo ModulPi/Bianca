@@ -28,6 +28,7 @@ from agent.api.schemas import (
 )
 from agent.config import get_settings
 from agent.confirmation.service import confirm_pending_signal
+from agent.dashboard.invalidate import invalidate_dashboard_snapshot
 from agent.exchange._client import format_binance_error
 from agent.exchange.quotes import (
     balance_to_response,
@@ -70,6 +71,7 @@ async def agent_start() -> MessageResponse:
         await runner.start()
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    invalidate_dashboard_snapshot()
     return MessageResponse(
         message=f"Agent runner started market={settings.trade_market} symbols={settings.resolved_agent_symbols}"
     )
@@ -80,6 +82,7 @@ async def agent_recover() -> MessageResponse:
     """人工恢复：清除自动降级状态（需 EXECUTION_MODE=auto）。"""
     runner = get_runner()
     await runner.recover()
+    invalidate_dashboard_snapshot()
     return MessageResponse(message="Agent degradation cleared; effective mode follows EXECUTION_MODE")
 
 
@@ -89,6 +92,7 @@ async def agent_stop() -> MessageResponse:
     if not runner.running:
         return MessageResponse(message="Agent runner is not running")
     await runner.stop()
+    invalidate_dashboard_snapshot(exchange_cache=True)
     return MessageResponse(message="Agent runner stopped")
 
 

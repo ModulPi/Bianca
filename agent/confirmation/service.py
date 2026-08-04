@@ -7,6 +7,7 @@ from agent.storage.json_utils import parse_json_field
 
 from agent.api.ws_manager import ws_manager
 from agent.config import Settings, get_settings
+from agent.dashboard.invalidate import invalidate_dashboard_snapshot
 from agent.graph.execute_agent import run_execute_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
@@ -43,6 +44,7 @@ async def queue_pending_signal(
         "strategy_id": strategy_id,
     }
     await ws_manager.broadcast(payload)
+    invalidate_dashboard_snapshot()
     return {
         **state,
         "pending_signal_id": row.id,
@@ -84,6 +86,7 @@ async def confirm_pending_signal(
         await ws_manager.broadcast(
             {"type": "confirmation_rejected", "pending_id": pending_id, "reason": risk.get("reason")}
         )
+        invalidate_dashboard_snapshot()
         return {"status": "risk_rejected", "state": state}
 
     state = await run_execute_agent(state, settings=cfg)
@@ -96,6 +99,7 @@ async def confirm_pending_signal(
             "trade_log_id": state.get("trade_log_id"),
         }
     )
+    invalidate_dashboard_snapshot()
     return {"status": state.get("status"), "state": state}
 
 
@@ -108,6 +112,7 @@ async def reject_pending_signal(pending_id: str) -> dict[str, str]:
         raise ValueError(f"信号状态为 {row.status}，无法拒绝")
     await repo.update_status(pending_id, "rejected")
     await ws_manager.broadcast({"type": "confirmation_rejected", "pending_id": pending_id, "reason": "user"})
+    invalidate_dashboard_snapshot()
     return {"status": "rejected", "pending_id": pending_id}
 
 
@@ -116,4 +121,5 @@ async def expire_pending_signals() -> int:
     count = await repo.expire_stale()
     if count:
         logger.info("Expired %s pending signals", count)
+        invalidate_dashboard_snapshot()
     return count

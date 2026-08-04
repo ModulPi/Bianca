@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from agent.api.health_service import build_health_response
 from agent.api.schemas import (
     AgentStatusResponse,
@@ -19,6 +21,7 @@ from agent.api.schemas import (
     WorkerTokenUsageItem,
 )
 from agent.config import Settings, get_settings
+from agent.dashboard.cache import get_or_set
 from agent.exchange.quotes import (
     balance_to_response,
     fetch_exchange_balance,
@@ -232,18 +235,71 @@ async def _fetch_tickers(
         return [], format_exchange_error(exc)
 
 
+async def _fetch_balance_cached(settings: Settings) -> tuple[BalanceResponse | None, str | None]:
+    mode = await get_trading_mode()
+    key = f"dashboard:balance:{mode}"
+
+    async def load() -> tuple[BalanceResponse | None, str | None]:
+        return await _fetch_balance(settings)
+
+    return await get_or_set(key, 20.0, load)
+
+
+async def _fetch_tickers_cached(
+    settings: Settings,
+    symbols: list[str],
+) -> tuple[list[TickerResponse], str | None]:
+    mode = await get_trading_mode()
+    sym_key = ",".join(sorted(symbols)) or settings.trade_symbol
+    key = f"dashboard:tickers:{mode}:{sym_key}"
+
+    async def load() -> tuple[list[TickerResponse], str | None]:
+        return await _fetch_tickers(settings, symbols)
+
+    return await get_or_set(key, 10.0, load)
+
+
+async def _fetch_health_cached() -> HealthResponse:
+    return await get_or_set("dashboard:health", 30.0, build_health_response)
+
+
+async def _fetch_gate_cached() -> tuple[TradingModeResponse, ValidationStatusResponse]:
+    async def load() -> tuple[TradingModeResponse, ValidationStatusResponse]:
+        return await build_trading_mode_response(), await build_validation_response()
+
+    return await get_or_set("dashboard:gate", 30.0, load)
+
+
+async def _fetch_usage_cached() -> UsageSummaryResponse:
+    async def load() -> UsageSummaryResponse:
+        summary = await DecisionRepository().usage_summary()
+        return UsageSummaryResponse(**summary)
+
+    return await get_or_set("dashboard:usage", 60.0, load)
+
+
+async def _resolve_session_cached(agent: AgentStatusResponse) -> SessionSummaryResponse | None:
+    if agent.running and agent.session_id:
+        key = f"dashboard:session:{agent.session_id}"
+
+        async def load() -> SessionSummaryResponse | None:
+            return await _resolve_session(agent)
+
+        return await get_or_set(key, 15.0, load)
+    return await _resolve_session(agent)
+
+
 async def build_dashboard_snapshot() -> DashboardSnapshotResponse:
     settings = get_settings()
     agent = await build_agent_status()
-    health: HealthResponse = await build_health_response()
-    trading_mode = await build_trading_mode_response()
-    validation = await build_validation_response()
-    usage = UsageSummaryResponse(**(await DecisionRepository().usage_summary()))
-    session = await _resolve_session(agent)
+    health = await _fetch_health_cached()
+    trading_mode, validation = await _fetch_gate_cached()
+    usage = await _fetch_usage_cached()
+    session = await _resolve_session_cached(agent)
 
     symbols = agent.symbols or settings.resolved_agent_symbols
-    balance, balance_error = await _fetch_balance(settings)
-    tickers, tickers_error = await _fetch_tickers(settings, symbols)
+    balance, balance_error = await _fetch_balance_cached(settings)
+    tickers, tickers_error = await _fetch_tickers_cached(settings, symbols)
     positions = _build_positions(balance, tickers, symbols)
 
     trade_repo = TradeRepository()
@@ -277,4 +333,5 @@ async def build_dashboard_snapshot() -> DashboardSnapshotResponse:
         pending_signals=[_pending_item(r) for r in pending_rows],
         risk_events=[_risk_item(r) for r in risk_rows],
         worker_token_usage=worker_usage,
+        generated_at=datetime.now(UTC).isoformat(),
     )

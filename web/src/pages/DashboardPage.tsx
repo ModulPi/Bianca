@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
+import { useCallback } from "react";
 import ActiveTradesSection from "../components/ActiveTradesSection";
 import AgentControl from "../components/AgentControl";
+import CollapsibleSection from "../components/CollapsibleSection";
 import ExecutionModeBanner from "../components/ExecutionModeBanner";
 import PnLPanel from "../components/PnLPanel";
 import PositionsPanel from "../components/PositionsPanel";
@@ -9,16 +10,41 @@ import TickerPanel from "../components/TickerPanel";
 import TokenUsagePanel from "../components/TokenUsagePanel";
 import TradingModePanel from "../components/TradingModePanel";
 import WorkerStatusPanel from "../components/WorkerStatusPanel";
-import { usePolling } from "../hooks/usePolling";
+import { useSnapshotPolling } from "../hooks/useSnapshotPolling";
+import { useSystemWebSocket } from "../hooks/useSystemWebSocket";
 
 export default function DashboardPage() {
-  const snapshotPoll = usePolling(() => api.dashboardSnapshot(), 5000);
+  const snapshotPoll = useSnapshotPolling(5000);
   const snap = snapshotPoll.data;
   const status = snap?.agent ?? null;
   const symbols = status?.symbols ?? [];
 
+  const forceRefreshSnapshot = useCallback(() => {
+    void snapshotPoll.forceRefresh();
+  }, [snapshotPoll.forceRefresh]);
+
+  const wsHandler = useCallback(
+    (ev: { type: string }) => {
+      if (
+        ev.type === "confirmation_required" ||
+        ev.type === "confirmation_executed" ||
+        ev.type === "confirmation_rejected"
+      ) {
+        void snapshotPoll.forceRefresh();
+      }
+    },
+    [snapshotPoll.forceRefresh],
+  );
+
+  const { connected: wsConnected } = useSystemWebSocket(wsHandler);
+
+  const pendingCount = snap?.pending_signals.length ?? 0;
+  const submittedCount = snap?.open_trades.length ?? 0;
+
   const showConfirm =
-    status?.execution_mode === "semi_auto" || status?.degraded;
+    status?.execution_mode === "semi_auto" ||
+    status?.degraded ||
+    pendingCount > 0;
 
   const balanceError = snap?.balance_error ?? snapshotPoll.error;
   const tickersError = snap?.tickers_error ?? null;
@@ -41,8 +67,23 @@ export default function DashboardPage() {
               {symbols.join(", ")}
             </span>
           ) : null}
+          <span
+            className={`rounded px-2 py-1 ring-1 ${
+              wsConnected
+                ? "bg-emerald-950/40 text-emerald-400 ring-emerald-900"
+                : "bg-zinc-900 text-zinc-500 ring-zinc-800"
+            }`}
+          >
+            WS {wsConnected ? "已连接" : "重连中"}
+          </span>
           <span className="rounded bg-zinc-900 px-2 py-1 ring-1 ring-zinc-800">
             snapshot 5s
+            {snap?.generated_at
+              ? ` · ${new Date(snap.generated_at).toLocaleTimeString()}`
+              : ""}
+            {snapshotPoll.notModifiedCount > 0
+              ? ` · 304×${snapshotPoll.notModifiedCount}`
+              : ""}
           </span>
         </div>
       </header>
@@ -55,14 +96,9 @@ export default function DashboardPage() {
 
       <ExecutionModeBanner status={status} />
 
-      {/* A | B | C */}
+      {/* A | B | C — 始终可见 */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <AgentControl
-          status={status}
-          onChange={() => {
-            void snapshotPoll.refresh();
-          }}
-        />
+        <AgentControl status={status} onChange={forceRefreshSnapshot} />
         <TradingModePanel
           tradingMode={snap?.trading_mode ?? null}
           validation={snap?.validation ?? null}
@@ -77,7 +113,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* D */}
+      {/* D — 始终可见 */}
       <WorkerStatusPanel
         workers={status?.workers ?? []}
         tradeMarket={status?.trade_market}
@@ -85,37 +121,50 @@ export default function DashboardPage() {
         sessionId={status?.session_id}
       />
 
-      {/* E | F */}
-      <div className="grid gap-4 xl:grid-cols-2">
-        <PositionsPanel
-          balance={snap?.balance ?? null}
+      {/* E | F — 可折叠，默认展开 */}
+      <CollapsibleSection title="仓位 · 收益" defaultOpen badge="E · F">
+        <div className="grid gap-4 xl:grid-cols-2">
+          <PositionsPanel
+            balance={snap?.balance ?? null}
+            tickers={snap?.tickers ?? []}
+            symbols={symbols}
+            session={snap?.session ?? null}
+            snapshotPositions={snap?.positions}
+            error={balanceError ?? tickersError}
+          />
+          <PnLPanel
+            summary={snap?.session ?? null}
+            agentStatus={status}
+            tradesForChart={snap?.chart_trades ?? []}
+          />
+        </div>
+      </CollapsibleSection>
+
+      {/* G — 有活动时默认展开 */}
+      <CollapsibleSection
+        title="进行中交易 · 降级确认"
+        defaultOpen={showConfirm || submittedCount > 0 || pendingCount > 0}
+        badge={`G · ${pendingCount + submittedCount}`}
+      >
+        <ActiveTradesSection
+          submitted={snap?.open_trades ?? []}
+          recentFilled={snap?.recent_filled ?? []}
+          pendingSignals={snap?.pending_signals ?? []}
+          showConfirmQueue={showConfirm}
+          riskEvents={snap?.risk_events ?? []}
+          onRefresh={forceRefreshSnapshot}
+          embedded
+        />
+      </CollapsibleSection>
+
+      {/* H — 默认收起 */}
+      <CollapsibleSection title="实时行情" defaultOpen={false} badge="H">
+        <TickerPanel
           tickers={snap?.tickers ?? []}
-          symbols={symbols}
-          session={snap?.session ?? null}
-          snapshotPositions={snap?.positions}
-          error={balanceError ?? tickersError}
+          loading={snapshotPoll.loading && !snap}
+          error={tickersError}
         />
-        <PnLPanel
-          summary={snap?.session ?? null}
-          agentStatus={status}
-          tradesForChart={snap?.chart_trades ?? []}
-        />
-      </div>
-
-      {/* G */}
-      <ActiveTradesSection
-        submitted={snap?.open_trades ?? []}
-        recentFilled={snap?.recent_filled ?? []}
-        showConfirmQueue={showConfirm ?? false}
-        riskEvents={snap?.risk_events ?? []}
-      />
-
-      {/* H */}
-      <TickerPanel
-        tickers={snap?.tickers ?? []}
-        loading={snapshotPoll.loading && !snap}
-        error={tickersError}
-      />
+      </CollapsibleSection>
 
       <p className="text-xs text-zinc-600">
         审计：

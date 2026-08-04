@@ -51,12 +51,18 @@ async def notify_session_closed(summary: dict, *, settings: Settings | None = No
     return await send_telegram(format_session_summary(summary), settings=cfg)
 
 
-async def notify_risk_reject(reason: str, signal: dict | None = None) -> bool:
+async def notify_risk_reject(reason: str, signal: dict | None = None) -> dict[str, bool]:
+    from agent.notify.email import notify_all
+
     cfg = get_settings()
     if not cfg.notify_on_risk_reject:
-        return False
+        return {"telegram": False, "email": False}
     action = (signal or {}).get("action", "?")
-    return await send_telegram(f"Bianca 风控拒绝\n动作: {action}\n原因: {reason}")
+    return await notify_all(
+        "Bianca 风控拒绝",
+        f"动作: {action}\n原因: {reason}",
+        settings=cfg,
+    )
 
 
 async def notify_daily_digest(text: str) -> bool:

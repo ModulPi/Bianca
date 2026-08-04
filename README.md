@@ -95,7 +95,7 @@ docker compose --profile mvp -f docker-compose.yml -f docker-compose.mvp.yml up 
 
 curl http://127.0.0.1:8000/api/v1/health
 curl -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8000/api/v1/summary/session/latest
-curl http://127.0.0.1:8000/api/v1/summary/{session_id}/export.csv
+curl http://127.0.0.1:8000/api/v1/summary/sessions/{session_id}/export.csv
 curl http://127.0.0.1:8000/api/v1/market/klines?symbol=BTCUSDT
 curl http://127.0.0.1:9090   # Prometheus（profile mvp）
 curl http://127.0.0.1:3001   # Grafana（admin/bianca）
@@ -121,7 +121,7 @@ docker compose up -d --build
 
 页面：仪表盘（持仓/盈亏曲线/Agent 启停）、交易、会话、决策回放、LLM 决策、风控事件、Token 消耗。
 
-半自动确认（WebSocket + confirm）依赖 M6，当前仅展示执行模式说明。
+半自动确认（M6）：`EXECUTION_MODE=semi_auto` 时，BUY/SELL 经 WebSocket 推送至控制台确认队列，确认后走风控与执行；30 分钟超时自动丢弃。
 
 ## 许可证
 

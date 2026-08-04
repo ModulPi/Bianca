@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getApiToken } from "../api/token";
 
 export interface WsEvent {
   type: string;
@@ -17,7 +18,9 @@ export function useSystemWebSocket(onEvent?: (event: WsEvent) => void) {
 
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const url = `${proto}://${window.location.host}/api/v1/ws/system`;
+    const token = getApiToken();
+    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+    const url = `${proto}://${window.location.host}/api/v1/ws/system${qs}`;
     let ws: WebSocket | null = null;
     let timer: number | undefined;
 

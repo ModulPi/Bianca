@@ -8,6 +8,7 @@ const links = [
   { to: "/checkpoints", label: "回放" },
   { to: "/decisions", label: "决策" },
   { to: "/risk", label: "风控" },
+  { to: "/market", label: "K 线" },
   { to: "/validation", label: "门禁" },
   { to: "/settings", label: "设置" },
   { to: "/usage", label: "Token" },

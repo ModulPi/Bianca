@@ -92,6 +92,10 @@ export default function ValidationPage() {
                 ? ` · 邮件: ${notifyPoll.data.email_configured ? "已配置" : "未配置"}`
                 : null}
             </p>
+            <p className="text-xs text-zinc-500">
+              切换 live 需在 <code className="mono">.env</code> 设置{" "}
+              <code className="mono">LIVE_TRADING_CONFIRMED=true</code>，并通过上方模拟验证。
+            </p>
             <div className="flex flex-wrap gap-2 pt-2">
               <button
                 type="button"
@@ -135,7 +139,16 @@ export default function ValidationPage() {
           className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm"
           onClick={() => run(() => api.notifyTest())}
         >
-          Telegram 测试
+          通知测试（Telegram + 邮件）
+        </button>
+        <button
+          type="button"
+          disabled={busy || !notifyPoll.data?.email_configured}
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm disabled:opacity-40"
+          title={notifyPoll.data?.email_configured ? undefined : "需配置 SMTP_* / NOTIFY_EMAIL_*"}
+          onClick={() => run(() => api.notifyTest())}
+        >
+          邮件通道测试
         </button>
         <button
           type="button"
@@ -144,6 +157,14 @@ export default function ValidationPage() {
           onClick={() => run(() => api.validationEvaluate())}
         >
           重新评估
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm"
+          onClick={() => run(() => api.notifyDailyDigest())}
+        >
+          发送日摘要
         </button>
         <button
           type="button"

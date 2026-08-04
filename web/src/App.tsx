@@ -11,6 +11,7 @@ import StrategiesPage from "./pages/StrategiesPage";
 import TradesPage from "./pages/TradesPage";
 import UsagePage from "./pages/UsagePage";
 import ValidationPage from "./pages/ValidationPage";
+import MarketPage from "./pages/MarketPage";
 import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="risk" element={<RiskPage />} />
         <Route path="checkpoints" element={<CheckpointsPageWithQuery />} />
         <Route path="validation" element={<ValidationPage />} />
+        <Route path="market" element={<MarketPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

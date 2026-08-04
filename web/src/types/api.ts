@@ -141,6 +141,15 @@ export interface TickerResponse {
   timestamp: number | null;
 }
 
+export interface KlineItem {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export interface DecisionLogItem {
   id: string;
   model_used: string;

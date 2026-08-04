@@ -9,6 +9,7 @@ import type {
   DecisionListResponse,
   FuturesStatus,
   HealthResponse,
+  KlineItem,
   MessageResponse,
   NotifyStatus,
   PendingSignalListResponse,
@@ -146,11 +147,18 @@ export const api = {
   validationReset: () => request<MessageResponse>("/validation/reset", { method: "POST" }),
   notifyStatus: () => request<NotifyStatus>("/notify/status"),
   notifyTest: () => request<MessageResponse>("/notify/test", { method: "POST" }),
+  notifyDailyDigest: () => request<MessageResponse>("/notify/daily-digest", { method: "POST" }),
   setTradingMode: (mode: string) =>
     request<TradingModeResponse>("/trading/mode", {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),
+  tradingMode: () => request<TradingModeResponse>("/trading/mode"),
+
+  marketKlines: (symbol = "BTCUSDT", interval = "1m", limit = 100) =>
+    request<{ items: KlineItem[]; total: number }>(
+      `/market/klines?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${limit}`,
+    ),
 
   futuresStatus: () => request<FuturesStatus>("/futures/status"),
 

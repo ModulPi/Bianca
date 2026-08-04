@@ -74,7 +74,7 @@ async def test_agent_tick_buy_execute_path():
 
     with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
         with patch(
-            "agent.graph.execute_agent._place_market_order",
+            "agent.graph.execute_agent.execute_market_order",
             AsyncMock(return_value=mock_order),
         ):
             result = await run_agent_tick(market_data=market, thread_id="e2e-buy")

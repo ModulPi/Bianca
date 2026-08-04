@@ -287,6 +287,36 @@ class TradeRepository:
             result = await db.execute(stmt)
             return int(result.scalar_one())
 
+    async def weighted_avg_buy_price(self, symbol: str) -> float | None:
+        from agent.llm.prompts import normalize_symbol
+
+        sym = normalize_symbol(symbol)
+        stmt = (
+            select(TradeLog)
+            .where(
+                TradeLog.symbol == sym,
+                TradeLog.side == "BUY",
+                TradeLog.status == "filled",
+            )
+            .order_by(TradeLog.created_at.desc())
+            .limit(50)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            rows = list(result.scalars().all())
+        total_qty = 0.0
+        total_cost = 0.0
+        for row in rows:
+            qty = float(row.quantity or 0)
+            price = float(row.price or 0)
+            if qty > 0 and price > 0:
+                total_qty += qty
+                total_cost += qty * price
+        if total_qty <= 0:
+            return None
+        return total_cost / total_qty
+
 
 class RiskEventRepository:
     async def save(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.websockets import WebSocket
 
 from agent.config import get_settings
 
@@ -29,6 +30,23 @@ def _extract_token(request: Request) -> str | None:
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
     return request.query_params.get("token")
+
+
+def _extract_ws_token(websocket: WebSocket) -> str | None:
+    auth = websocket.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return websocket.query_params.get("token")
+
+
+def verify_ws_token(websocket: WebSocket) -> bool:
+    """Return True when the WebSocket may proceed (no auth configured or token matches)."""
+    settings = get_settings()
+    expected = settings.api_token.strip()
+    if not expected:
+        return True
+    provided = _extract_ws_token(websocket)
+    return provided == expected
 
 
 class ApiTokenMiddleware(BaseHTTPMiddleware):

@@ -161,6 +161,25 @@ class InsufficientBalanceRule:
         return None
 
 
+class StopLossRule:
+    name = "stop_loss"
+
+    def evaluate(self, ctx: RiskContext) -> RiskVerdict | None:
+        if ctx.signal.get("action") != "BUY":
+            return None
+        unrealized = getattr(ctx, "unrealized_pnl_usdt", None)
+        if unrealized is None:
+            return None
+        limit = ctx.settings.stop_loss_usdt
+        if unrealized <= -limit:
+            return RiskVerdict(
+                approved=False,
+                reason=f"未实现亏损 {abs(unrealized):.2f} USDT 触发止损 {limit:.2f}",
+                rule=self.name,
+            )
+        return None
+
+
 class DrawdownRule:
     name = "drawdown"
 
@@ -218,6 +237,7 @@ def default_rules() -> list[RiskRule]:
         MaxTradeAmountRule(),
         DailyLossRule(),
         MinConfidenceRule(),
+        StopLossRule(),
         PositionLimitRule(),
         InsufficientBalanceRule(),
         DrawdownRule(),

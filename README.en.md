@@ -2,65 +2,59 @@
 
 English | **[简体中文](./README.md)**
 
-A crypto auto-trading Agent platform for retail users. **PoC focus:** LLM autonomous decisions + Binance Demo spot + LangGraph orchestration.
+A crypto auto-trading Agent platform for retail users. **PoC validated; MVP** delivers Web console, strategy templates, semi-auto confirm, full risk controls, summary APIs, paper gate, and Telegram/email notifications.
 
-## Current Stage: PoC
+## Current Stage: MVP
 
-On Binance Demo spot, the LLM autonomously analyzes market data, produces buy/sell signals, passes minimal risk checks, and completes at least **one buy + one sell** cycle.
-
-| Item | PoC Scope |
-|------|-----------|
-| Exchange | Binance Demo spot |
-| Decision | LLM autonomous (BUY/SELL/HOLD) |
+| Item | Scope |
+|------|-------|
+| Exchange | Binance Demo spot (+ optional futures U/coin when `FUTURES_ENABLED=true`) |
+| Decision | LLM autonomous (BUY/SELL/HOLD) + strategy templates |
 | LLM | **DeepSeek API (default)**, switchable to Ollama via config |
 | Orchestration | LangGraph Supervisor |
-| Risk Control | Max trade amount + daily loss limit |
-| Deployment | Docker (API) + SQLite |
+| Risk Control | 9 rules incl. stop-loss, drawdown, circuit breaker |
+| Deployment | Docker (API + Web) + SQLite or PostgreSQL + Redis |
 | UI | **Web console** (`web/`) + CLI / curl |
-
-## Tech Stack
-
-| Layer | PoC | MVP (Later) |
-|-------|-----|-------------|
-| Agent | LangGraph + DeepSeek/Ollama | + strategy templates |
-| Backend | FastAPI + Python | Same |
-| Exchange | ccxt (Demo spot) | + futures |
-| Database | SQLite | PostgreSQL + TimescaleDB |
-| Frontend | React + TypeScript (M7 `web/`) | Same + semi-auto confirm |
 
 ## Quick Start (PoC)
 
 ```bash
 cp .env.example .env
-# Set BINANCE_API_KEY/SECRET, LLM_API_KEY, BINANCE_PROXY if needed
-
 docker compose up -d --build
 python start_poc.py
 
-# Or step by step:
 curl http://127.0.0.1:8000/api/v1/health
-curl -X POST http://127.0.0.1:8000/api/v1/agent/start
-python run_poc_closure.py
-
 curl http://127.0.0.1:8000/api/v1/summary/session/latest
 ```
 
 **Switch to local Ollama:** set `LLM_PROVIDER=ollama` in `.env` and restart the API.
 
+## Quick Start (MVP dual-stack)
+
+```bash
+docker compose --profile mvp -f docker-compose.yml -f docker-compose.mvp.yml up -d --build
+
+curl http://127.0.0.1:8000/api/v1/summary/sessions/{session_id}/export.csv
+curl http://127.0.0.1:8000/api/v1/market/klines?symbol=BTCUSDT
+curl http://127.0.0.1:9090   # Prometheus
+curl http://127.0.0.1:3001   # Grafana (admin/bianca)
+```
+
 ## Web Console (M7)
 
 ```bash
-# Dev: hot reload
 docker compose up -d api && cd web && npm install && npm run dev
+# http://127.0.0.1:3000
 
-# Prod: nginx + API via Docker Compose
 docker compose up -d --build
-# Web http://127.0.0.1:3000
+# Web http://127.0.0.1:3000 · API http://127.0.0.1:8000
 ```
 
-Pages: dashboard (balance, PnL chart, agent control), trades, sessions, checkpoint replay, decisions, risk events, token usage.
+Pages: dashboard (balance, PnL chart, agent control, confirm queue), trades, sessions, strategies, market klines, checkpoint replay, decisions, risk events, validation gate, settings, token usage.
 
-Semi-auto confirm requires M6 WebSocket (placeholder banner on dashboard).
+Semi-auto (`EXECUTION_MODE=semi_auto`): BUY/SELL signals push via WebSocket to the confirm queue; user confirms before risk + execution; 30-minute TTL.
+
+Live trading requires paper validation pass + `LIVE_TRADING_CONFIRMED=true` in `.env`.
 
 ## License
 

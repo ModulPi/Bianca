@@ -7,13 +7,12 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.checkpoint.saver import checkpointer_context
 from agent.config import Settings, get_settings
-from agent.exchange.spot_demo import SpotDemoExchange
+from agent.exchange.market_data import fetch_market_snapshot
 from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_agent
 from agent.graph.execute_agent import run_execute_agent
 from agent.graph.pending_agent import run_pending_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
-from agent.llm.prompts import normalize_symbol
 from agent.storage.repository import TradeRepository
 
 
@@ -25,22 +24,11 @@ async def fetch_market_node(state: TradeState) -> TradeState:
     if not settings.binance_configured:
         raise RuntimeError("market_data missing and Binance not configured")
 
-    from agent.trading.mode import get_trading_mode
-
-    live = await get_trading_mode() == "live"
-    async with SpotDemoExchange(settings, live=live) as demo:
-        ticker = await demo.fetch_ticker(settings.trade_symbol)
-        balance = await demo.fetch_balance()
-
-    free = {k: float(v) for k, v in balance.get("free", {}).items() if v}
-    market_data = {
-        "symbol": normalize_symbol(ticker.get("symbol", settings.trade_symbol)),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-        "balance": {"free": free},
-    }
+    market_data = await fetch_market_snapshot(
+        market=settings.default_trade_market,
+        settings=settings,
+        symbol=settings.trade_symbol,
+    )
     from agent.market.klines import persist_recent_klines
 
     await persist_recent_klines(settings.trade_symbol, settings=settings)

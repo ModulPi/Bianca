@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     max_position_pct: float = Field(default=0.8, gt=0, le=1)
     max_drawdown_usdt: float = Field(default=50.0, gt=0)
     circuit_breaker_failures: int = Field(default=3, ge=1)
+    stop_loss_usdt: float = Field(default=25.0, gt=0)
     pending_signal_ttl_minutes: int = Field(default=30, ge=1)
 
     # Agent

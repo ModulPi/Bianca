@@ -33,7 +33,7 @@
 ## 验收检查表（PoC M3）
 
 - [x] `docker compose up api` 成功，绑定 `127.0.0.1:8000`
-- [ ] Ollama 在宿主机运行，API 容器可访问（`LLM_PROVIDER=ollama` 时；/health 含 ollama 探测与 Docker 提示）
+- [x] Ollama 在宿主机运行，API 容器可访问（`LLM_PROVIDER=ollama` 时；/health 含 ollama 探测与 Docker 提示）
 - [x] `POST /api/v1/agent/start` 启动 Agent
 - [x] `trade_logs` 表有 ≥1 BUY + ≥1 SELL，`status=filled`
 - [x] 每条记录含 `decision_reason`（LLM 理由）和 `risk_decision`

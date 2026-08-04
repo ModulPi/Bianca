@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const summaryPoll = usePolling(summaryFetcher, 8000, statusPoll.data !== null);
   const tradesPoll = usePolling(() => api.trades({ limit: 50 }), 15000);
   const healthPoll = usePolling(() => api.health(), 30000);
+  const tradingModePoll = usePolling(() => api.tradingMode(), 30000);
   const balancePoll = usePolling(fetchBalanceTicker, 20000);
   const dailyPoll = usePolling(() => api.summaryDaily(), 60000);
 
@@ -68,6 +69,7 @@ export default function DashboardPage() {
         <BalancePanel
           balance={balancePoll.data?.balance ?? null}
           ticker={balancePoll.data?.ticker ?? null}
+          tradingMode={tradingModePoll.data?.mode}
           error={balancePoll.data?.error}
         />
         <div className="grid grid-cols-1 gap-3">

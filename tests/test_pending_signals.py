@@ -28,7 +28,7 @@ async def test_pending_signal_confirm_flow(client):
     )
 
     mock_order = {"id": "ord-1", "filled": 0.00015, "average": 65000.0, "status": "closed"}
-    with patch("agent.graph.execute_agent._place_market_order", AsyncMock(return_value=mock_order)):
+    with patch("agent.graph.execute_agent.execute_market_order", AsyncMock(return_value=mock_order)):
         resp = await client.post(f"/api/v1/pending-signals/{row.id}/confirm")
     assert resp.status_code == 200
     body = resp.json()
@@ -66,6 +66,6 @@ async def test_strategy_confirm_alias(client):
         session_id=None,
         ttl_minutes=30,
     )
-    with patch("agent.graph.execute_agent._place_market_order", AsyncMock(return_value={"id": "x", "filled": 1, "average": 1})):
+    with patch("agent.graph.execute_agent.execute_market_order", AsyncMock(return_value={"id": "x", "filled": 1, "average": 1})):
         resp = await client.post(f"/api/v1/strategies/{row.id}/confirm")
     assert resp.status_code == 200

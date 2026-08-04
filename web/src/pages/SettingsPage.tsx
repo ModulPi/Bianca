@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [newType, setNewType] = useState("binance");
   const [newValue, setNewValue] = useState("");
   const [creating, setCreating] = useState(false);
+  const [formats, setFormats] = useState<Record<string, string>>({});
 
   const loadSecrets = useCallback(async () => {
     setLoading(true);
@@ -38,6 +39,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void loadSecrets();
+    api
+      .secretFormats()
+      .then(setFormats)
+      .catch(() => setFormats({}));
   }, [loadSecrets]);
 
   function saveToken() {
@@ -125,6 +130,15 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-medium">运行时密钥</h2>
             <p className="text-sm text-zinc-500">写入数据库后需点击「重载到运行时」生效（环境变量优先）。</p>
+            {Object.keys(formats).length > 0 ? (
+              <ul className="mt-2 text-xs text-zinc-500 space-y-1">
+                {Object.entries(formats).map(([k, v]) => (
+                  <li key={k}>
+                    <span className="mono text-zinc-400">{k}</span>: {v}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <button
             type="button"

@@ -197,9 +197,23 @@ GET /api/v1/dashboard/positions?symbols=BTCUSDT,ETHUSDT
 | 各 symbol last / bid / ask | `GET /exchange/ticker?symbol=` | 5–10s |
 | 24h 涨跌（后续） | 需 ticker 扩展或 ccxt 字段 | — |
 
-**不做：** 全屏 K 线、画线工具、订单簿深度。
+**不做：** 全屏 K 线终端、画线工具、订单簿深度。
 
 ---
+
+### [I] K 线 · 买卖点（运维向，非交易终端）
+
+**目的：** 在当前 symbol 的 K 线上叠加 Agent 买卖成交点，便于复盘决策时机。
+
+| 展示项 | 数据源 | 刷新 |
+|--------|--------|------|
+| OHLCV K 线 | `GET /api/v1/market/klines?symbol=&interval=`（PG 或交易所实时） | 30s |
+| 买入 ▲ / 卖出 ▼ | `snapshot.chart_trades` 或 `/trades` 按 symbol 过滤 | 5s（随 snapshot） |
+| symbol / 周期切换 | 前端 · 对齐 `AGENT_SYMBOLS` | — |
+
+**标注规则：** `filled` 实心三角；`submitted` 半透明。价格取 `trade_logs.price`，时间取 `created_at`。
+
+**不做：** 手动画线、指标编辑器、下单入口。
 
 ## 4. 数据流与刷新策略
 
@@ -297,7 +311,7 @@ GET /api/v1/dashboard/snapshot
 | **P1** | `GET /dashboard/snapshot` 聚合 API | ✅ |
 | **P1** | 批量 ticker、按 Worker Token 分摊 | ✅ |
 | **P1** | ETag / If-None-Match、分层 TTL、变更 invalidate | ✅ |
-| **P2** | 多 symbol 仓位 + 市场字段（crypto/A股/美股钩子） | ✅ 字段就绪，A股/美股适配待落地 |
+| **P2** | 多 symbol 仓位 + 市场字段（crypto MVP）；A股/美股 **延后** | ✅ crypto / ⏸ A股美股 |
 
 ---
 

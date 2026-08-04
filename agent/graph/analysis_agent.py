@@ -6,7 +6,7 @@ from typing import Any
 from agent.config import Settings, get_settings
 from agent.graph.state import TradeState
 from agent.llm.analyzer import MarketAnalyzer
-from agent.llm.prompts import base_asset_for_symbol
+from agent.llm.prompts import base_asset_for_symbol, normalize_symbol, resolve_worker_symbol
 from agent.llm.schemas import AnalysisResult, TradeSignal
 from agent.storage.repository import DecisionRepository
 
@@ -28,7 +28,7 @@ def apply_aggressive_nudge(
 
     balance = market_data.get("balance") or {}
     free = balance.get("free") or {}
-    symbol = settings.trade_symbol
+    symbol = resolve_worker_symbol(market_data=market_data, settings=settings)
     base = base_asset_for_symbol(symbol)
     last = float(market_data.get("last") or 0)
     usdt = float(free.get("USDT") or 0)
@@ -78,12 +78,13 @@ def cap_signal_amount(signal: TradeSignal, market_data: dict[str, Any], settings
         return signal
     if last <= 0:
         return signal
+    base = base_asset_for_symbol(resolve_worker_symbol(market_data=market_data, settings=settings))
     max_base = (max_usdt * 0.99) / last
     if float(signal.amount) > max_base:
         return signal.model_copy(
             update={
                 "amount": round(max_base, 8),
-                "reason": signal.reason + f"（裁剪至 {max_base:.8f} BTC 名义≤{max_usdt} USDT）",
+                "reason": signal.reason + f"（裁剪至 {max_base:.8f} {base} 名义≤{max_usdt} USDT）",
             }
         )
     return signal
@@ -99,7 +100,8 @@ def correct_aggressive_action(
         return signal
     balance = market_data.get("balance") or {}
     free = balance.get("free") or {}
-    base = base_asset_for_symbol(settings.trade_symbol)
+    symbol = resolve_worker_symbol(market_data=market_data, settings=settings)
+    base = base_asset_for_symbol(symbol)
     usdt = float(free.get("USDT") or 0)
     base_qty = float(free.get(base) or 0)
     last = float(market_data.get("last") or 0)
@@ -110,10 +112,10 @@ def correct_aggressive_action(
         buy_amount = max(min_usdt, buy_amount)
         return TradeSignal(
             action="BUY",
-            symbol=settings.trade_symbol,
+            symbol=symbol,
             amount=round(buy_amount, 2),
             confidence=0.9,
-            reason="激进修正：无可用 BTC 底仓，改为买入启动闭环",
+            reason="激进修正：无可用底仓，改为买入启动闭环",
         )
     return signal
 

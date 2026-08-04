@@ -222,6 +222,14 @@ export interface KlineItem {
   volume: number;
 }
 
+export interface KlineListResponse {
+  items: KlineItem[];
+  total: number;
+  symbol: string;
+  interval: string;
+  source: string;
+}
+
 export interface DecisionLogItem {
   id: string;
   model_used: string;

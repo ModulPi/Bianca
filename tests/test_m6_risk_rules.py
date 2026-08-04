@@ -49,12 +49,22 @@ def test_trade_symbol_rejects_mismatch():
     rule = TradeSymbolRule()
     ctx = RiskContext(
         signal={"action": "BUY", "amount": 10, "symbol": "ETHUSDT", "confidence": 0.9},
-        market_data={"last": 3000},
-        settings=_settings(),
+        market_data={"last": 3000, "symbol": "ETHUSDT"},
+        settings=_settings(agent_symbols="BTCUSDT"),
     )
     verdict = rule.evaluate(ctx)
     assert verdict is not None
     assert verdict.rule == "trade_symbol"
+
+
+def test_trade_symbol_allows_multi_agent_symbols():
+    rule = TradeSymbolRule()
+    ctx = RiskContext(
+        signal={"action": "BUY", "amount": 10, "symbol": "ETHUSDT", "confidence": 0.9},
+        market_data={"last": 3000, "symbol": "ETHUSDT"},
+        settings=_settings(agent_symbols="BTCUSDT,ETHUSDT"),
+    )
+    assert rule.evaluate(ctx) is None
 
 
 def test_circuit_breaker_trips():

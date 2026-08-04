@@ -77,13 +77,14 @@ class RiskEngine:
             return None
         balance = market_data.get("balance") or {}
         free = balance.get("free") or {}
-        from agent.llm.prompts import base_asset_for_symbol
+        from agent.llm.prompts import base_asset_for_symbol, resolve_worker_symbol
 
-        base = base_asset_for_symbol(self._settings.trade_symbol)
+        symbol = resolve_worker_symbol(market_data=market_data, settings=self._settings)
+        base = base_asset_for_symbol(symbol)
         base_qty = float(free.get(base) or 0)
         if base_qty <= 0:
             return 0.0
-        avg_entry = await self._trade_repo.weighted_avg_buy_price(self._settings.trade_symbol)
+        avg_entry = await self._trade_repo.weighted_avg_buy_price(symbol)
         if avg_entry is None or avg_entry <= 0:
             return None
         return (last - avg_entry) * base_qty

@@ -67,6 +67,21 @@ def normalize_symbol(symbol: str) -> str:
     return symbol.upper().replace("/", "")
 
 
+def resolve_worker_symbol(
+    *,
+    market_data: dict[str, Any] | None = None,
+    signal: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> str:
+    """当前 Worker tick 对应的交易对（优先 market_data，其次 signal，最后 settings）。"""
+    cfg = settings or get_settings()
+    if market_data and market_data.get("symbol"):
+        return normalize_symbol(str(market_data["symbol"]))
+    if signal and signal.get("symbol"):
+        return normalize_symbol(str(signal["symbol"]))
+    return normalize_symbol(cfg.trade_symbol)
+
+
 def get_system_prompt(settings: Settings) -> str:
     if settings.trading_style == "aggressive":
         return AGGRESSIVE_SYSTEM_PROMPT

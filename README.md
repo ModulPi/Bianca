@@ -10,7 +10,7 @@
 |----|------|
 | Agent 24×7 自主买卖 | 交易终端 / K 线看盘 / 手动下单 |
 | 多 Worker 并行（`AGENT_SYMBOLS`） | 策略商城 / 模板 UI |
-| **Agent 运维看板**（监控·仓位·收益·Token） | C 端交易平台式控制台 |
+| **Agent 运维看板**（监控·K 线买卖点·仓位·收益·Token） | C 端交易平台式控制台 |
 | 失败自动降级 + 人工确认 | 以人工操作为主的产品 |
 | 决策审计（回放 / 会话） | 以人工下单为主的产品 |
 
@@ -37,7 +37,7 @@ docker compose up -d api && cd web && npm install && npm run dev
 # http://127.0.0.1:3000
 ```
 
-看板设计（实时行情 · 仓位 · 进行中交易 · 实盘信息 · 收益 · Worker 状态 · Token）：  
+看板设计（K 线买卖点 · 实时行情 · 仓位 · 进行中交易 · 实盘信息 · 收益 · Worker 状态 · Token）：  
 → [docs/outline-design/架构设计/Agent运维看板设计-Bianca.md](./docs/outline-design/架构设计/Agent运维看板设计-Bianca.md)
 
 ## 核心配置

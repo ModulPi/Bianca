@@ -1,6 +1,6 @@
 # Bianca — 开发排期计划
 
-> 版本：v0.3 | 日期：2026-07-31 | 团队：1 人（独立开发）
+> 版本：v0.4 | 日期：2026-08-04 | 团队：1 人（独立开发）
 
 ---
 
@@ -9,79 +9,24 @@
 | 项目 | 内容 |
 |------|------|
 | 项目名称 | Bianca |
+| **当前定位** | **自主交易 Agent 引擎** + **运维看板**（非交易平台） |
 | PoC 目标 | Demo 现货 LLM 自主完成 1 买 1 卖闭环 |
+| MVP 目标 | 24×7 多 Worker · 完整风控 · 降级人工介入 · 运维看板 |
 | 团队人数 | 1 人 |
-| **PoC 预计工期** | **12 个工作日（~2.5 周）** |
-| **MVP 预计工期** | **25 个工作日（PoC 后另计）** |
+| PoC 工期 | 12 工作日（已完成） |
+| MVP + 看板 | ~25 + 10 工作日（已完成） |
 
 ---
 
-## PoC 排期（12 天）
+## PoC 排期（12 天）— 已完成
 
-### 阶段 P0：基础设施（2 天）
-
-| # | 任务 | 工时 | 产出 |
-|---|------|------|------|
-| P0.1 | 项目骨架、`pyproject.toml`、目录结构 | 0.5d | 代码仓库结构 |
-| P0.2 | `config.py` — pydantic-settings（含 LLM_AUTO_EXECUTE 等） | 0.5d | 配置中心 |
-| P0.3 | SQLite 模型 + Alembic 初始化 | 0.5d | 数据层 |
-| P0.4 | Dockerfile（仅 API）+ docker-compose.yml | 0.5d | Docker 部署 |
-
-**产出：** `docker compose up api` 启动；SQLite 建表完成。
-
----
-
-### 阶段 P1：交易所 Demo 现货（2 天）
-
-| # | 任务 | 工时 | 产出 |
-|---|------|------|------|
-| P1.1 | `exchange/spot_demo.py` — ccxt 封装 Demo 现货 | 1d | 余额/下单/查单 |
-| P1.2 | `exchange/market_stream.py` — WebSocket 行情 | 1d | 实时 ticker/K 线 |
-
-**产出：** **M0** — Demo 现货 API 连通。
-
----
-
-### 阶段 P2：LLM Analysis Agent（3 天）
-
-| # | 任务 | 工时 | 产出 |
-|---|------|------|------|
-| P2.1 | `llm/prompts.py` — 结构化输出 Prompt | 0.5d | Prompt 模板 |
-| P2.2 | `llm/provider.py` — DeepSeek / Ollama 可切换封装 | 0.5d | LLM Provider |
-| P2.3 | `llm/analyzer.py` — OpenAI 兼容客户端 | 0.5d | MarketAnalyzer |
-| P2.4 | `graph/analysis_agent.py` — 产出 BUY/SELL/HOLD | 1d | Analysis Agent |
-| P2.5 | `LLM_AUTO_EXECUTE` 开关逻辑 | 0.5d | 可配置执行 |
-
-**产出：** **M1** — LLM 能产出结构化交易信号。
-
----
-
-### 阶段 P3：风控 + 执行 + LangGraph（3 天）
-
-| # | 任务 | 工时 | 产出 |
-|---|------|------|------|
-| P3.1 | `risk/rules.py` — 单笔上限 + 日亏损 2 条规则 | 1d | 最小风控 |
-| P3.2 | `graph/risk_agent.py` + `graph/execute_agent.py` | 1d | 风控/执行节点 |
-| P3.3 | `graph/supervisor.py` — 图编译 + SqliteSaver | 1d | 完整 StateGraph |
-
-**产出：** **M2** — 风控生效，Demo 现货可下单。
-
----
-
-### 阶段 P4：Agent 循环 + API + 验收（2 天）
-
-| # | 任务 | 工时 | 产出 |
-|---|------|------|------|
-| P4.1 | `agent/runner.py` — 定时触发 Agent 循环 | 0.5d | 7×24 运行 |
-| P4.2 | `api/routes.py` — start/stop/status/trades | 0.5d | CLI 接口 |
-| P4.3 | 集成测试 + Demo 环境 1 买 1 卖验收 | 0.5d | 闭环验证 |
-| P4.4 | 文档与 `.env.example` 完善 | 0.5d | 交付 |
-
-**产出：** **M3** — PoC 验收通过。
-
----
-
-## PoC 关键路径
+| 阶段 | 名称 | 里程碑 |
+|------|------|--------|
+| P0 | 基础设施 | — |
+| P1 | Demo 现货 API | M0 |
+| P2 | LLM Analysis Agent | M1 |
+| P3 | 风控 + 执行 + LangGraph | M2 |
+| P4 | Agent 循环 + API + 验收 | M3 |
 
 ```
 P0(2d) → P1(2d) → P2(3d) → P3(3d) → P4(2d) = 12d
@@ -90,19 +35,43 @@ P0(2d) → P1(2d) → P2(3d) → P3(3d) → P4(2d) = 12d
 
 ---
 
-## MVP 排期概要（PoC 后，25 天）
+## MVP 排期（PoC 后）— 已完成
 
-| 阶段 | 名称 | 工时 | 里程碑 |
-|------|------|------|--------|
-| M0 | PostgreSQL + TimescaleDB + Redis 迁移 | 3d | 基础设施升级 |
-| M1 | 策略模板引擎（grid/dca/trend） | 5d | 规则策略 |
-| M2 | 完整风控 8 条 + 半自动确认 API | 4d | 风控 + 半自动 |
-| M2.5 | 汇总管理模块（Summary API + session_summaries） | 2d | 可观测性 |
-| M3 | 合约 API + 模拟→实盘门禁 | 4d | 全品种 |
-| M4 | React Web 控制台 | 7d | Web 上线 |
-| M5 | 测试 + Telegram 通知 | 2d | MVP 交付 |
+| 阶段 | 名称 | 里程碑 | 状态 |
+|------|------|--------|------|
+| M4 | PG + Redis 双栈 | 基础设施 | ✅ |
+| M5 | 策略模板引擎 | 实验代码 | ✅ 无产品入口 |
+| M6 | 8 条风控 + 半自动确认 | 风控 + 降级 | ✅ |
+| M6.5 | Summary 模块 | 会话汇总 | ✅ |
+| M7 | 合约 + 模拟→实盘门禁 | 全品种钩子 | ✅ |
+| M8 | 通知 + Live 钩子 | MVP 交付 | ✅ |
 
-> MVP 详细任务见各模块设计文档，PoC 验收通过后再细化排期。
+---
+
+## Agent 重构 + 运维看板（2026-08）— 已完成
+
+| 阶段 | 内容 | 产出 | 状态 |
+|------|------|------|------|
+| **R1** | 产品定位对齐 | 砍交易平台 UI；多 Worker；24×7；MarketAdapter | ✅ |
+| **R2** | 看板 P0 | 单页 A–H 模块（复用 API） | ✅ |
+| **R3** | 看板 P1 | `/dashboard/snapshot` · 批量 ticker · Worker Token | ✅ |
+| **R4** | 看板 P1+ | ETag/304 · 分层 TTL · invalidate · 可折叠 | ✅ |
+| **R5** | 看板 P2 | 多 symbol 仓位 · 市场字段（A股/美股钩子） | ✅ |
+
+设计详见 [Agent运维看板设计](../outline-design/架构设计/Agent运维看板设计-Bianca.md)。
+
+---
+
+## 后续排期（P2，MVP 跑通后再做）
+
+> **A 股 / 美股**：等 crypto MVP 全链路稳定验收后再启动，当前仅占位钩子。
+
+| 阶段 | 内容 | 优先级 |
+|------|------|--------|
+| P2.1 | A 股 `MarketAdapter` 行情 + 下单 | 延后 |
+| P2.2 | 美股 `MarketAdapter` 行情 + 下单 | 延后 |
+| P2.3 | MarketStream 接入 Agent tick | 低 |
+| P2.4 | analysis_reports 落库 | 低 |
 
 ---
 
@@ -110,7 +79,7 @@ P0(2d) → P1(2d) → P2(3d) → P3(3d) → P4(2d) = 12d
 
 | 风险 | 缓解 |
 |------|------|
-| LLM 输出不稳定 | 结构化 Prompt + JSON 模式 + 解析失败默认 HOLD |
-| Ollama 宿主机连不通 | `.env` 文档说明 `host.docker.internal` |
-| Demo API 限流 | 降低 Agent 循环频率（如 5min/次） |
-| PoC 缓冲 | 建议预留 3 天（总计 15 天） |
+| LLM 输出不稳定 | 结构化 Prompt + 解析失败默认 HOLD |
+| Demo API 限流 | 降低 tick 间隔；snapshot 分层 TTL + ETag |
+| 24×7 连续失败 | `AUTO_DEGRADE_ENABLED` → semi_auto + 看板确认 |
+| 看板轮询压力 | snapshot 聚合 + 304 + 交易所数据缓存 |

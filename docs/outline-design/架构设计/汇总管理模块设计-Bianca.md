@@ -25,7 +25,7 @@ PoC 验收（M3）已证明链路可跑通，但**缺少统一汇总视图**；�
 1. **一键会话汇总**：Token 消耗 + 成交统计 + 盈亏 + 闭环状态
 2. **准确盈亏口径**：已实现 / 未实现 / 现金净流入 / 持仓市值
 3. **持久化会话快照**：Agent 启停周期可回溯、可对比
-4. **Web 控制台集成**：M7 仪表盘直接消费 Summary API
+4. **运维看板集成**：看板 snapshot / 快捷入口消费 Summary API
 5. **可选导出**：JSON / CSV（MVP 先做 JSON）
 
 ---
@@ -34,7 +34,7 @@ PoC 验收（M3）已证明链路可跑通，但**缺少统一汇总视图**；�
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Web 控制台 (M7) / CLI / Telegram 摘要 (M8)              │
+│  Agent 运维看板 / CLI / Telegram 摘要 (M8)              │
 └───────────────────────────┬─────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────┐
@@ -191,13 +191,13 @@ Agent 运行中每 **N 分钟**（默认 15）写 `session_summaries` 中间态�
 
 ---
 
-## 7. Web 控制台集成（M7）
+## 7. 运维看板集成
 
-| 页面 | 消费 API |
+| 区域 | 消费 API |
 |------|----------|
-| 仪表盘首页 | `/summary/session/current` 或 `/daily` |
+| 看板快捷入口 / snapshot | `/summary/session/current` 或 `/daily` |
 | 交易复盘 | `/sessions/{id}` + `/trades?session_id=` |
-| LLM 成本 | `/usage` + session.usage |
+| Token 面板 | `/usage` + session.usage |
 | 闭环验收 | `trades.loop_closed` 徽章 |
 
 ---
@@ -207,10 +207,10 @@ Agent 运行中每 **N 分钟**（默认 15）写 `session_summaries` 中间态�
 | 里程碑 | 交付物 |
 |--------|--------|
 | **M6.5**（新增） | Summary API + `session_summaries` 表 + 单元测试 |
-| **M7** | Web 汇总仪表盘 |
+| **M7.5** | 运维看板展示 Token、盈亏、闭环状态 |
 | **M8** | Telegram 每日摘要推送（调用 `/summary/daily`） |
 
-**工时估算：** 2d（后端 Summary Service + API + 迁移）+ 1d（Web 仪表盘，含在 M7）
+**工时估算：** 2d（后端 Summary Service + API + 迁移）+ 含在看板 P0
 
 ---
 
@@ -220,7 +220,7 @@ Agent 运行中每 **N 分钟**（默认 15）写 `session_summaries` 中间态�
 - [x] `pnl.realized_usdt` 与手动按成交记录计算误差 < 0.01 USDT
 - [x] `usage.total_tokens` 与 `decision_logs` 聚合一致
 - [x] `loop_closed=true` 当且仅当存在 filled BUY 与 filled SELL
-- [x] Web 控制台首页展示 Token、盈亏、闭环状态（M7）
+- [x] 运维看板展示 Token、盈亏、闭环状态（US-M01 快捷入口）
 
 ---
 

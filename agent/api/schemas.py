@@ -447,6 +447,9 @@ class KlineItem(BaseModel):
 class KlineListResponse(BaseModel):
     items: list[KlineItem]
     total: int
+    symbol: str = ""
+    interval: str = "1m"
+    source: str = "empty"
 
 
 class TradingModeRequest(BaseModel):

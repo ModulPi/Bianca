@@ -112,7 +112,7 @@ class MarketAnalyzer:
         user_prompt = build_user_prompt(
             market_data,
             max_trade_amount=self._settings.max_trade_amount,
-            trade_symbol=self._settings.trade_symbol,
+            trade_symbol=str(symbol),
             trading_style=self._settings.trading_style,
             min_trade_usdt=self._settings.poc_min_trade_usdt,
         )
@@ -161,7 +161,7 @@ async def check_llm(settings: Settings | None = None) -> dict[str, str]:
         hint = (
             "Ollama: 设置 LLM_PROVIDER=ollama、LLM_BASE_URL=http://host.docker.internal:11434、LLM_MODEL=..."
             if cfg.llm_provider == "ollama"
-            else "DeepSeek: 设置 LLM_API_KEY，或通过 /api/v1/secrets/keys 写入 llm 类型密钥"
+            else "DeepSeek: 设置 LLM_API_KEY（.env 中 LLM_API_KEY）"
         )
         return {"status": "not_configured", "detail": hint}
     try:

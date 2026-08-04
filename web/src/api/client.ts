@@ -1,7 +1,5 @@
 import type {
   AgentStatus,
-  ApiKeyItem,
-  ApiKeyListResponse,
   BalanceResponse,
   CheckpointHistoryResponse,
   CheckpointThreadListResponse,
@@ -9,17 +7,13 @@ import type {
   DecisionListResponse,
   FuturesStatus,
   HealthResponse,
-  KlineItem,
+  KlineListResponse,
   MessageResponse,
   NotifyStatus,
   PendingSignalListResponse,
   RiskEventListResponse,
-  SecretsReloadResponse,
   SessionListResponse,
   SessionSummary,
-  StrategyItem,
-  StrategyListResponse,
-  StrategyTickResponse,
   TickerResponse,
   TradeListResponse,
   UsageSummary,
@@ -139,21 +133,6 @@ export const api = {
   rejectPending: (id: string) =>
     request<MessageResponse>(`/pending-signals/${id}/reject`, { method: "POST" }),
 
-  strategies: (limit = 50) => request<StrategyListResponse>(`/strategies?limit=${limit}`),
-  createStrategy: (body: {
-    name: string;
-    type: string;
-    execution_mode?: string;
-    market?: string;
-    params?: Record<string, unknown>;
-  }) => request<StrategyItem>("/strategies", { method: "POST", body: JSON.stringify(body) }),
-  startStrategy: (id: string) =>
-    request<StrategyItem>(`/strategies/${id}/start`, { method: "POST" }),
-  stopStrategy: (id: string) =>
-    request<StrategyItem>(`/strategies/${id}/stop`, { method: "POST" }),
-  tickStrategy: (id: string) =>
-    request<StrategyTickResponse>(`/strategies/${id}/tick`, { method: "POST" }),
-
   validationStatus: () => request<ValidationStatus>("/validation/status"),
   validationEvaluate: () => request<ValidationStatus>("/validation/evaluate", { method: "POST" }),
   validationReset: () => request<MessageResponse>("/validation/reset", { method: "POST" }),
@@ -167,20 +146,12 @@ export const api = {
     }),
   tradingMode: () => request<TradingModeResponse>("/trading/mode"),
 
-  marketKlines: (symbol = "BTCUSDT", interval = "1m", limit = 100) =>
-    request<{ items: KlineItem[]; total: number }>(
+  marketKlines: (symbol = "BTCUSDT", interval = "1m", limit = 120) =>
+    request<KlineListResponse>(
       `/market/klines?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${limit}`,
     ),
 
   futuresStatus: () => request<FuturesStatus>("/futures/status"),
-
-  listSecrets: () => request<ApiKeyListResponse>("/secrets/keys"),
-  createSecret: (body: { name: string; key_type: string; value: string }) =>
-    request<ApiKeyItem>("/secrets/keys", { method: "POST", body: JSON.stringify(body) }),
-  deleteSecret: (id: string) =>
-    request<MessageResponse>(`/secrets/keys/${id}`, { method: "DELETE" }),
-  reloadSecrets: () => request<SecretsReloadResponse>("/secrets/reload", { method: "POST" }),
-  secretFormats: () => request<Record<string, string>>("/secrets/formats"),
 };
 
 export { ApiError };

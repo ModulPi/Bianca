@@ -1,6 +1,6 @@
 # Bianca — 用户故事集
 
-> 版本：v0.3 | 日期：2026-07-31 | 基于 PRD v0.3
+> 版本：v0.4 | 日期：2026-08-04 | 基于 PRD v0.4
 
 ---
 
@@ -12,10 +12,10 @@
 > **以便** 后续 Agent 能在此环境交易  
 
 **验收标准：**
-- [ ] 使用 `demo-api.binance.com` 端点
-- [ ] 能查询 Demo 账户余额
-- [ ] 能获取 BTCUSDT 实时 ticker / K 线
-- [ ] API Key 从 `.env` 读取，日志脱敏
+- [x] 使用 `demo-api.binance.com` 端点
+- [x] 能查询 Demo 账户余额
+- [x] 能获取 BTCUSDT 实时 ticker / K 线
+- [x] API Key 从 `.env` 读取，日志脱敏
 
 **优先级：** PoC P0 | **Story Point：** 3
 
@@ -27,11 +27,11 @@
 > **以便** 由 AI 自主决定买卖时机  
 
 **验收标准：**
-- [ ] 默认使用 DeepSeek API（`LLM_PROVIDER=deepseek`）
-- [ ] 修改 `.env` 为 `LLM_PROVIDER=ollama` 后可切换至本地模型，无需改代码
-- [ ] 输出结构化信号：`{action, symbol, amount, confidence, reason}`
-- [ ] HOLD 时不触发下单
-- [ ] 单次推理超时可降级为 HOLD 并记录
+- [x] 默认使用 DeepSeek API（`LLM_PROVIDER=deepseek`）
+- [x] 修改 `.env` 为 `LLM_PROVIDER=ollama` 后可切换至本地模型，无需改代码
+- [x] 输出结构化信号：`{action, symbol, amount, confidence, reason}`
+- [x] HOLD 时不触发下单
+- [x] 单次推理超时可降级为 HOLD 并记录
 
 **优先级：** PoC P0 | **Story Point：** 8
 
@@ -43,9 +43,9 @@
 > **以便** 调试时可只看信号、验收时可自动闭环  
 
 **验收标准：**
-- [ ] `LLM_AUTO_EXECUTE=true` 时 BUY/SELL 进入风控链
-- [ ] `LLM_AUTO_EXECUTE=false` 时仅记录信号，不下单
-- [ ] 配置变更无需改代码，重启 API 生效
+- [x] `LLM_AUTO_EXECUTE=true` 时 BUY/SELL 进入风控链
+- [x] `LLM_AUTO_EXECUTE=false` 时仅记录信号，不下单
+- [x] 配置变更无需改代码，重启 API 生效
 
 **优先级：** PoC P0 | **Story Point：** 3
 
@@ -57,9 +57,9 @@
 > **以便** Demo 环境也不会因 Agent 失控产生异常行为  
 
 **验收标准：**
-- [ ] 单笔订单金额 > `MAX_TRADE_AMOUNT` 时拒绝
-- [ ] 当日累计亏损 ≥ `DAILY_LOSS_LIMIT` 时拒绝所有新单
-- [ ] 拒绝原因写入 `trade_logs` 和 `risk_events`
+- [x] 单笔订单金额 > `MAX_TRADE_AMOUNT` 时拒绝
+- [x] 当日累计亏损 ≥ `DAILY_LOSS_LIMIT` 时拒绝所有新单
+- [x] 拒绝原因写入 `trade_logs` 和 `risk_events`
 
 **优先级：** PoC P0 | **Story Point：** 5
 
@@ -71,9 +71,9 @@
 > **以便** 验证 PoC 核心链路  
 
 **验收标准：**
-- [ ] 日志中存在 1 条 BUY + 1 条 SELL，均为 `filled` 状态
-- [ ] 每条记录含 LLM 决策理由和风控结果
-- [ ] LangGraph Checkpointer 可回放决策过程
+- [x] 日志中存在 1 条 BUY + 1 条 SELL，均为 `filled` 状态
+- [x] 每条记录含 LLM 决策理由和风控结果
+- [x] LangGraph Checkpointer 可回放决策过程
 
 **优先级：** PoC P0 | **Story Point：** 8
 
@@ -85,10 +85,10 @@
 > **以便** PoC 阶段无需前端即可操作  
 
 **验收标准：**
-- [ ] `POST /api/v1/agent/start` 启动 Agent 循环
-- [ ] `POST /api/v1/agent/stop` 停止
-- [ ] `GET /api/v1/trades` 查看交易记录
-- [ ] `GET /api/v1/agent/status` 查看运行状态
+- [x] `POST /api/v1/agent/start` 启动 Agent 循环
+- [x] `POST /api/v1/agent/stop` 停止
+- [x] `GET /api/v1/trades` 查看交易记录
+- [x] `GET /api/v1/agent/status` 查看运行状态
 
 **优先级：** PoC P0 | **Story Point：** 5
 
@@ -131,11 +131,11 @@
 > **以便** 复盘 PoC/MVP 运行效果，无需手动查库  
 
 **验收标准：**
-- [ ] `POST /agent/stop` 后可 `GET /summary/session/latest` 获取完整快照
-- [ ] 汇总含 `loop_closed`、Token 统计、PnL 分项
-- [ ] 历史会话可分页查询
+- [x] `POST /agent/stop` 后可 `GET /summary/session/latest` 获取完整快照
+- [x] 汇总含 `loop_closed`、Token 统计、PnL 分项
+- [x] 历史会话可分页查询（`/summary/sessions`）
 
-**优先级：** MVP P1 | **Story Point：** 5
+**优先级：** MVP P1 | **Story Point：** 5 | **状态：** ✅
 
 ---
 
@@ -145,12 +145,12 @@
 > **以便** 人工介入而不中断 24×7 运行  
 
 **验收标准：**
-- [ ] WebSocket 推送 `confirmation_required` 事件
-- [ ] 看板确认队列：`POST /pending-signals/{id}/confirm`
-- [ ] 30 分钟超时自动丢弃
-- [ ] 连续失败自动降级 semi_auto（`AUTO_DEGRADE_ENABLED`）
+- [x] WebSocket 推送 `confirmation_required` 事件
+- [x] 看板确认队列：`POST /pending-signals/{id}/confirm`
+- [x] 30 分钟超时自动丢弃
+- [x] 连续失败自动降级 semi_auto（`AUTO_DEGRADE_ENABLED`）
 
-**优先级：** MVP P0 | **Story Point：** 8
+**优先级：** MVP P0 | **Story Point：** 8 | **状态：** ✅
 
 ---
 
@@ -167,7 +167,12 @@
 > **我想要** 止损、回撤、仓位上限等完整保护  
 > **以便** 实盘前风险可控  
 
-**优先级：** MVP P1 | **Story Point：** 8
+**验收标准：**
+- [x] `agent/risk/rules.py` 启用 8 条核心规则 + symbol 白名单
+- [x] 熔断器（CircuitBreaker）触发后拒绝新单
+- [x] 拒绝事件写入 `risk_events`，看板可展示
+
+**优先级：** MVP P1 | **Story Point：** 8 | **状态：** ✅
 
 ---
 
@@ -176,7 +181,12 @@
 > **我想要** 模拟交易验证达标后才能开启实盘  
 > **以便** 策略经过充分验证  
 
-**优先级：** MVP P1 | **Story Point：** 5
+**验收标准：**
+- [x] `validation/paper_gate.py` 评估模拟时长与盈亏指标
+- [x] 看板只读展示验证状态（snapshot `validation` 字段）
+- [x] 未达标时拒绝切换 live 模式
+
+**优先级：** MVP P1 | **Story Point：** 5 | **状态：** ✅
 
 ---
 
@@ -184,5 +194,6 @@
 
 | 阶段 | 故事 | Story Points |
 |------|------|-------------|
-| **PoC** | US-P01 ~ US-P06 | **32** |
-| **MVP** | US-M01 看板 · US-M02 降级 · US-M04~M06 | ~50+ |
+| **PoC** | US-P01 ~ US-P06 | **32** ✅ |
+| **MVP** | US-M01~M06（看板/降级/风控/门禁/汇总） | ~50+ ✅ |
+| **P2** | A股/美股适配 · MarketStream | TBD |

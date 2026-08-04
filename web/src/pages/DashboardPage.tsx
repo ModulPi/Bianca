@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import ActiveTradesSection from "../components/ActiveTradesSection";
 import AgentControl from "../components/AgentControl";
 import CollapsibleSection from "../components/CollapsibleSection";
+import KlineChartPanel from "../components/KlineChartPanel";
 import ExecutionModeBanner from "../components/ExecutionModeBanner";
 import PnLPanel from "../components/PnLPanel";
 import PositionsPanel from "../components/PositionsPanel";
@@ -156,6 +157,11 @@ export default function DashboardPage() {
           onRefresh={forceRefreshSnapshot}
           embedded
         />
+      </CollapsibleSection>
+
+      {/* I — K 线 + 买卖点 */}
+      <CollapsibleSection title="K 线 · 买卖点" defaultOpen badge="I">
+        <KlineChartPanel symbols={symbols} trades={snap?.chart_trades ?? []} />
       </CollapsibleSection>
 
       {/* H — 默认收起 */}

@@ -3,24 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 from agent.config import Settings, get_settings
-from agent.exchange.spot_demo import SpotDemoExchange, resolve_market_symbol
 from agent.graph.state import TradeState
-from agent.positions.sync import sync_positions_from_exchange
+from agent.metrics import record_trade
 from agent.storage.repository import AgentConfigRepository, TradeRepository
+from agent.trading.executor import execute_market_order, resolve_trade_market
 
 
 async def run_execute_agent(state: TradeState, *, settings: Settings | None = None) -> TradeState:
     cfg = settings or get_settings()
-    from agent.trading.mode import get_trading_mode
     from agent.validation.paper_gate import assert_demo_mode_for_trading
 
     await assert_demo_mode_for_trading()
-    if await get_trading_mode() == "live" and not cfg.futures_enabled:
-        return {
-            **state,
-            "status": "skipped",
-            "message": "live 模式已启用但合约 API 未对接，暂不下单",
-        }
     signal = state.get("llm_signal") or {}
     market_data = state.get("market_data") or {}
     trade_id = state.get("trade_log_id")
@@ -28,6 +21,7 @@ async def run_execute_agent(state: TradeState, *, settings: Settings | None = No
     action = signal.get("action", "HOLD").upper()
     amount = signal.get("amount")
     symbol = signal.get("symbol") or cfg.trade_symbol
+    market = resolve_trade_market(signal, cfg)
 
     if action not in {"BUY", "SELL"} or not amount:
         return {
@@ -38,9 +32,16 @@ async def run_execute_agent(state: TradeState, *, settings: Settings | None = No
 
     side = action.lower()
     try:
-        async with SpotDemoExchange(cfg) as demo:
-            order = await _place_market_order(demo, side, float(amount), symbol, market_data)
+        order = await execute_market_order(
+            side=side,
+            amount=float(amount),
+            symbol=symbol,
+            market_data=market_data,
+            settings=cfg,
+            market=market,
+        )
     except Exception as exc:  # noqa: BLE001
+        record_trade(side=action, status="failed", market=market)
         if trade_id:
             repo = TradeRepository()
             await repo.update_status(
@@ -74,35 +75,14 @@ async def run_execute_agent(state: TradeState, *, settings: Settings | None = No
         )
 
     await _update_daily_pnl(cfg, action, float(amount), float(filled_price or 0))
-    await sync_positions_from_exchange(settings=cfg)
+    record_trade(side=action, status="filled", market=market)
 
     return {
         **state,
         "order_result": order,
         "status": "filled",
-        "message": f"{action} 订单已提交: {external_id}",
+        "message": f"{action} 订单已提交 ({market}): {external_id}",
     }
-
-
-async def _place_market_order(
-    demo: SpotDemoExchange,
-    side: str,
-    amount: float,
-    symbol: str,
-    market_data: dict[str, Any],
-) -> dict[str, Any]:
-    exchange = demo.exchange
-    sym = resolve_market_symbol(exchange, symbol)
-    if side == "buy":
-        return await exchange.create_order(
-            sym,
-            "market",
-            "buy",
-            None,
-            None,
-            {"quoteOrderQty": amount},
-        )
-    return await exchange.create_order(sym, "market", "sell", amount)
 
 
 async def _update_daily_pnl(

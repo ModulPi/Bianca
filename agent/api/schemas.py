@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 
@@ -9,11 +11,28 @@ class HealthResponse(BaseModel):
     redis: str = "not_configured"
     redis_detail: str | None = None
     checkpointer_backend: str = "sqlite"
+    api_auth_enabled: bool = False
+    encryption_configured: bool = False
+    runtime_secrets_loaded: bool = False
+    metrics_enabled: bool = True
+    ollama: str | None = None
+    ollama_detail: str | None = None
     binance_demo: str
+    binance_demo_detail: str | None = None
+    binance_live: str | None = None
+    binance_live_detail: str | None = None
     binance_detail: str | None = None
     llm_provider: str
     llm: str
     llm_detail: str | None = None
+
+
+class WorkerStatusItem(BaseModel):
+    symbol: str
+    last_tick: str | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+    tick_count: int = 0
 
 
 class AgentStatusResponse(BaseModel):
@@ -28,6 +47,10 @@ class AgentStatusResponse(BaseModel):
     session_id: str | None = None
     session_started_at: str | None = None
     execution_mode: str = "auto"
+    trade_market: str = "crypto"
+    symbols: list[str] = []
+    workers: list[WorkerStatusItem] = []
+    degraded: bool = False
 
 
 class MessageResponse(BaseModel):
@@ -46,6 +69,61 @@ class TickerResponse(BaseModel):
     bid: float | None = None
     ask: float | None = None
     timestamp: int | None = None
+    change_24h: float | None = None
+    change_24h_pct: float | None = None
+    high_24h: float | None = None
+    low_24h: float | None = None
+    volume_24h: float | None = None
+
+
+class TickerListResponse(BaseModel):
+    items: list[TickerResponse]
+    total: int
+
+
+class DashboardPositionItem(BaseModel):
+    symbol: str
+    base: str
+    free: float
+    used: float
+    mark: float | None = None
+    notional_usdt: float | None = None
+    market: str = "crypto"
+    quote_currency: str = "USDT"
+    available: bool = True
+
+
+class DashboardPositionsResponse(BaseModel):
+    items: list[DashboardPositionItem]
+    total: int
+    generated_at: str
+
+
+class WorkerTokenUsageItem(BaseModel):
+    symbol: str
+    llm_calls: int
+    total_tokens: int
+
+
+class DashboardSnapshotResponse(BaseModel):
+    agent: AgentStatusResponse
+    trading_mode: TradingModeResponse
+    validation: ValidationStatusResponse
+    health: HealthResponse
+    usage: UsageSummaryResponse
+    session: SessionSummaryResponse | None = None
+    balance: BalanceResponse | None = None
+    balance_error: str | None = None
+    positions: list[DashboardPositionItem] = []
+    tickers: list[TickerResponse] = []
+    tickers_error: str | None = None
+    open_trades: list[TradeLogItem] = []
+    recent_filled: list[TradeLogItem] = []
+    chart_trades: list[TradeLogItem] = []
+    pending_signals: list[PendingSignalItem] = []
+    risk_events: list[RiskEventItem] = []
+    worker_token_usage: list[WorkerTokenUsageItem] = []
+    generated_at: str
 
 
 class MarketDataInput(BaseModel):
@@ -78,8 +156,24 @@ class AnalysisResponse(BaseModel):
     auto_execute: bool
     llm_auto_execute: bool
     decision_id: str | None = None
+    analysis_report_id: str | None = None
     raw_output: str | None = None
     usage: dict | None = None
+
+
+class AnalysisReportItem(BaseModel):
+    id: str
+    model_used: str
+    content: str
+    suggestions: list[dict]
+    confidence: float | None = None
+    symbols: str = ""
+    created_at: str
+
+
+class AnalysisReportListResponse(BaseModel):
+    items: list[AnalysisReportItem]
+    total: int
 
 
 class DecisionLogItem(BaseModel):
@@ -191,11 +285,27 @@ class SessionPnLInfo(BaseModel):
     daily_pnl_legacy: float
 
 
+class SessionPositionItem(BaseModel):
+    symbol: str
+    base: str
+    free: float = 0.0
+    used: float = 0.0
+    mark_price: float | None = None
+    notional_quote: float | None = None
+    market: str = "crypto"
+    quote_currency: str = "USDT"
+    available: bool = True
+
+
 class SessionPositionsInfo(BaseModel):
     base_asset: str
     base_free: float
     usdt_free: float
     mark_price: float | None = None
+    market: str = "crypto"
+    quote_currency: str = "USDT"
+    cash_free: float | None = None
+    items: list[SessionPositionItem] = []
 
 
 class SessionSummaryResponse(BaseModel):
@@ -321,8 +431,53 @@ class ValidationStatusResponse(BaseModel):
 
 class NotifyStatusResponse(BaseModel):
     telegram_configured: bool
+    email_configured: bool = False
     notify_on_session_close: bool
     notify_on_risk_reject: bool
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str
+    key_type: str
+    value: str
+
+
+class ApiKeyItem(BaseModel):
+    id: str
+    name: str
+    key_type: str
+    masked_value: str
+    created_at: str
+    updated_at: str
+
+
+class ApiKeyListResponse(BaseModel):
+    items: list[ApiKeyItem]
+    total: int
+
+
+class SecretsReloadResponse(BaseModel):
+    message: str
+    binance_configured: bool
+    llm_configured: bool
+    telegram_configured: bool
+
+
+class KlineItem(BaseModel):
+    time: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class KlineListResponse(BaseModel):
+    items: list[KlineItem]
+    total: int
+    symbol: str = ""
+    interval: str = "1m"
+    source: str = "empty"
 
 
 class TradingModeRequest(BaseModel):
@@ -338,6 +493,10 @@ class TradingModeResponse(BaseModel):
 class FuturesStatusResponse(BaseModel):
     enabled: bool
     message: str
+    connectivity: str = "unknown"
+    detail: str | None = None
+    futures_u: dict | None = None
+    futures_coin: dict | None = None
 
 
 class PositionItem(BaseModel):

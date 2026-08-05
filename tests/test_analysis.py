@@ -120,6 +120,7 @@ async def test_analysis_run_with_mock_llm(client):
                 "prompt_summary": "BTCUSDT last=65000",
                 "auto_execute": False,
                 "decision_id": "test-decision-id",
+                "analysis_report_id": "test-report-id",
                 "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
             },
         )()

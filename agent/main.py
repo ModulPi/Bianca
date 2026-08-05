@@ -6,7 +6,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import __version__
+from agent.api.dashboard_routes import router as dashboard_router
 from agent.api.checkpoint_routes import router as checkpoint_router
+from agent.api.market_routes import router as market_router
+from agent.api.metrics_routes import router as metrics_router
 from agent.api.pending_routes import router as pending_router
 from agent.api.routes import router
 from agent.api.strategy_routes import router as strategy_router
@@ -24,6 +27,8 @@ from agent.market.kline_collector import run_kline_collector_loop
 from agent.runner import get_runner
 from agent.strategy.runner import get_strategy_runner, resume_strategy_runner_if_needed
 from agent.cache.redis_client import close_redis, init_redis
+from agent.security.auth import ApiTokenMiddleware
+from agent.security.secrets_loader import refresh_effective_settings
 from agent.storage.database import close_db, init_db
 
 logger = logging.getLogger(__name__)
@@ -42,6 +47,7 @@ async def _expire_pending_loop() -> None:
 async def lifespan(app: FastAPI):
     clear_settings_cache()
     await init_db()
+    await refresh_effective_settings()
     await init_redis()
     await resume_strategy_runner_if_needed()
     expire_task = asyncio.create_task(_expire_pending_loop())
@@ -61,6 +67,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Bianca", version=__version__, lifespan=lifespan)
+app.add_middleware(ApiTokenMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -74,6 +81,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(market_router, prefix="/api/v1")
+app.include_router(metrics_router)
 app.include_router(summary_router, prefix="/api/v1")
 app.include_router(checkpoint_router, prefix="/api/v1")
 app.include_router(pending_router, prefix="/api/v1")

@@ -137,6 +137,35 @@ class PaperValidationRow(Base):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class AnalysisReportRow(Base):
+    __tablename__ = "analysis_reports"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    model_used: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    suggestions: Mapped[str] = mapped_column(JsonText, nullable=False, default="[]")
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    symbols: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_analysis_reports_time", AnalysisReportRow.created_at.desc())
+
+
+class ApiKeyRow(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    key_type: Mapped[str] = mapped_column(String, nullable=False)
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_api_keys_type", ApiKeyRow.key_type)
+
+
 class PositionRow(Base):
     __tablename__ = "positions"
 

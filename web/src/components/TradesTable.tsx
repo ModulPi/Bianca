@@ -2,6 +2,7 @@ import type { TradeLogItem } from "../types/api";
 
 interface TradesTableProps {
   items: TradeLogItem[];
+  showSymbol?: boolean;
 }
 
 const statusColor: Record<string, string> = {
@@ -10,7 +11,7 @@ const statusColor: Record<string, string> = {
   signal_only: "text-zinc-400",
 };
 
-export default function TradesTable({ items }: TradesTableProps) {
+export default function TradesTable({ items, showSymbol = false }: TradesTableProps) {
   if (items.length === 0) {
     return <p className="text-sm text-zinc-500">暂无交易记录</p>;
   }
@@ -21,6 +22,7 @@ export default function TradesTable({ items }: TradesTableProps) {
         <thead className="bg-zinc-900/80 text-left text-xs uppercase text-zinc-500">
           <tr>
             <th className="px-4 py-3">时间</th>
+            {showSymbol ? <th className="px-4 py-3">Symbol</th> : null}
             <th className="px-4 py-3">方向</th>
             <th className="px-4 py-3">数量</th>
             <th className="px-4 py-3">价格</th>
@@ -35,6 +37,9 @@ export default function TradesTable({ items }: TradesTableProps) {
               <td className="px-4 py-3 mono text-xs text-zinc-400 whitespace-nowrap">
                 {new Date(t.created_at).toLocaleString()}
               </td>
+              {showSymbol ? (
+                <td className="px-4 py-3 mono text-amber-300">{t.symbol}</td>
+              ) : null}
               <td className="px-4 py-3">
                 <span
                   className={

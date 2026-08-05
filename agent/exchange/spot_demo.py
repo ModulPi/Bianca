@@ -23,15 +23,17 @@ def resolve_market_symbol(exchange: ccxt.binance, symbol: str) -> str:
 
 
 class SpotDemoExchange:
-    """ccxt wrapper for Binance Demo spot trading."""
+    """ccxt wrapper for Binance spot（Demo 或 Live）。"""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(self, settings: Settings | None = None, *, live: bool = False) -> None:
         self._settings = settings or get_settings()
+        self._live = live
         self._exchange: ccxt.binance | None = None
 
     def _build_exchange(self) -> ccxt.binance:
         exchange = ccxt.binance(build_binance_config(self._settings))
-        exchange.enable_demo_trading(True)
+        if not self._live:
+            exchange.enable_demo_trading(True)
         return exchange
 
     async def __aenter__(self) -> SpotDemoExchange:
@@ -112,13 +114,31 @@ async def check_binance_demo() -> dict[str, str]:
         return {"status": "not_configured", "detail": "BINANCE_API_KEY/SECRET missing"}
 
     try:
-        async with SpotDemoExchange(settings) as demo:
+        async with SpotDemoExchange(settings, live=False) as demo:
             result = await demo.ping()
         return {
             "status": "ok",
-            "detail": f"{result['symbol']} last={result['last']}",
+            "detail": f"demo {result['symbol']} last={result['last']}",
         }
     except Exception as exc:  # noqa: BLE001 — health probe
+        return {"status": "error", "detail": format_binance_error(exc)}
+
+
+async def check_binance_live() -> dict[str, str]:
+    settings = get_settings()
+    if not settings.binance_configured:
+        return {"status": "not_configured", "detail": "BINANCE_API_KEY/SECRET missing"}
+    if not settings.live_trading_confirmed:
+        return {"status": "disabled", "detail": "LIVE_TRADING_CONFIRMED=false"}
+
+    try:
+        async with SpotDemoExchange(settings, live=True) as live:
+            result = await live.ping()
+        return {
+            "status": "ok",
+            "detail": f"live {result['symbol']} last={result['last']}",
+        }
+    except Exception as exc:  # noqa: BLE001
         return {"status": "error", "detail": format_binance_error(exc)}
 
 

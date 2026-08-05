@@ -190,6 +190,21 @@ DO $ts$ BEGIN IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_hypertabl
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_klines_time_symbol_interval ON klines(time, symbol, interval);
 CREATE INDEX IF NOT EXISTS idx_klines_symbol_interval_time ON klines(symbol, interval, time DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_klines_unique ON klines(symbol, interval, time);
+
+-- ============================================================
+-- 12. 加密 API Key 存储（MVP）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS api_keys (
+    id              TEXT            PRIMARY KEY,
+    name            TEXT            NOT NULL,
+    key_type        TEXT            NOT NULL,
+    encrypted_value TEXT            NOT NULL,
+    created_at      TEXT            NOT NULL,
+    updated_at      TEXT            NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_type ON api_keys(key_type);
 
 -- TimescaleDB 压缩 / 保留（扩展可用时生效）
 DO $ts$ BEGIN

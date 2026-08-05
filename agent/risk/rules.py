@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from agent.config import Settings
+from agent.llm.prompts import base_asset_for_symbol, normalize_symbol, resolve_worker_symbol
 
 
 @dataclass
@@ -106,9 +107,9 @@ class PositionLimitRule:
         last = float(ctx.market_data.get("last") or 0)
         if last <= 0:
             return None
-        from agent.llm.prompts import base_asset_for_symbol
 
-        base = base_asset_for_symbol(ctx.settings.trade_symbol)
+        symbol = resolve_worker_symbol(market_data=ctx.market_data, signal=ctx.signal, settings=ctx.settings)
+        base = base_asset_for_symbol(symbol)
         usdt = float(free.get("USDT") or 0)
         base_qty = float(free.get(base) or 0)
         amount = float(signal.get("amount") or 0)
@@ -148,9 +149,10 @@ class InsufficientBalanceRule:
                     rule=self.name,
                 )
         else:
-            from agent.llm.prompts import base_asset_for_symbol
-
-            base = base_asset_for_symbol(ctx.settings.trade_symbol)
+            symbol = resolve_worker_symbol(
+                market_data=ctx.market_data, signal=ctx.signal, settings=ctx.settings
+            )
+            base = base_asset_for_symbol(symbol)
             base_qty = float(free.get(base) or 0)
             if base_qty + 1e-9 < amount:
                 return RiskVerdict(
@@ -158,6 +160,25 @@ class InsufficientBalanceRule:
                     reason=f"{base} 余额 {base_qty:.6f} 不足以卖出 {amount:.6f}",
                     rule=self.name,
                 )
+        return None
+
+
+class StopLossRule:
+    name = "stop_loss"
+
+    def evaluate(self, ctx: RiskContext) -> RiskVerdict | None:
+        if ctx.signal.get("action") != "BUY":
+            return None
+        unrealized = getattr(ctx, "unrealized_pnl_usdt", None)
+        if unrealized is None:
+            return None
+        limit = ctx.settings.stop_loss_usdt
+        if unrealized <= -limit:
+            return RiskVerdict(
+                approved=False,
+                reason=f"未实现亏损 {abs(unrealized):.2f} USDT 触发止损 {limit:.2f}",
+                rule=self.name,
+            )
         return None
 
 
@@ -200,14 +221,16 @@ class TradeSymbolRule:
     def evaluate(self, ctx: RiskContext) -> RiskVerdict | None:
         if ctx.signal.get("action") not in {"BUY", "SELL"}:
             return None
-        from agent.llm.prompts import normalize_symbol
 
-        sym = normalize_symbol(str(ctx.signal.get("symbol") or ctx.settings.trade_symbol))
-        expected = normalize_symbol(ctx.settings.trade_symbol)
-        if sym != expected:
+        sym = normalize_symbol(
+            str(ctx.signal.get("symbol") or resolve_worker_symbol(market_data=ctx.market_data, settings=ctx.settings))
+        )
+        allowed = {normalize_symbol(s) for s in ctx.settings.resolved_agent_symbols}
+        if sym not in allowed:
+            allowed_list = ", ".join(sorted(allowed))
             return RiskVerdict(
                 approved=False,
-                reason=f"信号交易对 {sym} 与配置 {expected} 不一致",
+                reason=f"信号交易对 {sym} 不在 AGENT_SYMBOLS 白名单 [{allowed_list}]",
                 rule=self.name,
             )
         return None
@@ -218,6 +241,7 @@ def default_rules() -> list[RiskRule]:
         MaxTradeAmountRule(),
         DailyLossRule(),
         MinConfidenceRule(),
+        StopLossRule(),
         PositionLimitRule(),
         InsufficientBalanceRule(),
         DrawdownRule(),

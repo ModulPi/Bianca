@@ -73,15 +73,11 @@ async def test_agent_tick_buy_execute_path():
     }
 
     with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
-        mock_demo = AsyncMock()
-        mock_demo.__aenter__ = AsyncMock(return_value=mock_demo)
-        mock_demo.__aexit__ = AsyncMock(return_value=False)
-        with patch("agent.graph.execute_agent.SpotDemoExchange", return_value=mock_demo):
-            with patch(
-                "agent.graph.execute_agent._place_market_order",
-                AsyncMock(return_value=mock_order),
-            ):
-                result = await run_agent_tick(market_data=market, thread_id="e2e-buy")
+        with patch(
+            "agent.graph.execute_agent.execute_market_order",
+            AsyncMock(return_value=mock_order),
+        ):
+            result = await run_agent_tick(market_data=market, thread_id="e2e-buy")
     assert result["status"] == "filled"
     assert result.get("order_result") == mock_order
     await close_db()

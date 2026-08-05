@@ -15,6 +15,8 @@ from agent.storage.constants import (
 from agent.storage.database import get_session_factory, schema_mode
 from agent.storage.models import (
     AgentConfigRow,
+    AnalysisReportRow,
+    ApiKeyRow,
     DecisionLog,
     PaperValidationRow,
     PendingSignalRow,
@@ -701,6 +703,93 @@ class PaperValidationRepository:
                 row.status = "cancelled"
             await db.commit()
         return await self.create(started_at=_utc_now())
+
+
+class ApiKeyRepository:
+    async def create(
+        self,
+        *,
+        name: str,
+        key_type: str,
+        encrypted_value: str,
+    ) -> ApiKeyRow:
+        now = _utc_now()
+        row = ApiKeyRow(
+            id=str(uuid.uuid4()),
+            name=name,
+            key_type=key_type,
+            encrypted_value=encrypted_value,
+            created_at=now,
+            updated_at=now,
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def list_all(self) -> list[ApiKeyRow]:
+        stmt = select(ApiKeyRow).order_by(ApiKeyRow.created_at.desc())
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_by_id(self, key_id: str) -> ApiKeyRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(ApiKeyRow, key_id)
+
+    async def delete(self, key_id: str) -> bool:
+        factory = get_session_factory()
+        async with factory() as db:
+            row = await db.get(ApiKeyRow, key_id)
+            if row is None:
+                return False
+            await db.delete(row)
+            await db.commit()
+            return True
+
+
+class AnalysisReportRepository:
+    async def save(
+        self,
+        *,
+        report_id: str,
+        model_used: str,
+        content: str,
+        suggestions: list[dict],
+        confidence: float | None,
+        symbols: str,
+    ) -> AnalysisReportRow:
+        row = AnalysisReportRow(
+            id=report_id,
+            model_used=model_used,
+            content=content,
+            suggestions=json.dumps(suggestions, ensure_ascii=False),
+            confidence=confidence,
+            symbols=symbols,
+            created_at=_utc_now(),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def list_recent(self, limit: int = 20) -> list[AnalysisReportRow]:
+        stmt = select(AnalysisReportRow).order_by(AnalysisReportRow.created_at.desc()).limit(limit)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_by_id(self, report_id: str) -> AnalysisReportRow | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(AnalysisReportRow, report_id)
 
 
 class KlineRepository:

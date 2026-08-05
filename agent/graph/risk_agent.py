@@ -39,8 +39,10 @@ async def run_risk_agent(state: TradeState, *, settings: Settings | None = None)
             detail={"reason": verdict.reason, "signal": signal},
             related_trade_id=trade_id,
         )
+        from agent.metrics import record_risk_reject
         from agent.notify.telegram import notify_risk_reject
 
+        record_risk_reject(verdict.rule)
         await notify_risk_reject(verdict.reason or verdict.rule, signal)
 
     return {

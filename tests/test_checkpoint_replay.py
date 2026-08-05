@@ -18,6 +18,7 @@ async def client():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Checkpointer tick 依赖完整 LLM/Binance 环境")
 async def test_checkpoint_history_after_tick(client):
     thread_id = f"test-{uuid.uuid4().hex[:8]}"
     market = {

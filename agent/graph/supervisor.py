@@ -5,16 +5,15 @@ from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
 
-from agent.checkpoint.store import checkpoint_saver
+from agent.checkpoint.saver import checkpointer_context
 from agent.config import Settings, get_settings
-from agent.exchange.spot_demo import SpotDemoExchange
+from agent.degradation import get_effective_execution_mode
 from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_agent
 from agent.graph.execute_agent import run_execute_agent
 from agent.graph.pending_agent import run_pending_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
-from agent.llm.prompts import normalize_symbol
-from agent.positions.sync import sync_positions_from_balance
+from agent.markets.registry import get_market_adapter
 from agent.storage.repository import TradeRepository
 
 
@@ -23,29 +22,22 @@ async def fetch_market_node(state: TradeState) -> TradeState:
         return state
 
     settings = get_settings()
-    if not settings.binance_configured:
-        raise RuntimeError("market_data missing and Binance not configured")
+    adapter = get_market_adapter(settings.trade_market, settings=settings)
+    if not adapter.is_available():
+        session = adapter.trading_session()
+        raise RuntimeError(f"市场 {settings.trade_market} 不可用: {session.detail}")
 
-    async with SpotDemoExchange(settings) as demo:
-        ticker = await demo.fetch_ticker(settings.trade_symbol)
-        balance = await demo.fetch_balance()
+    session = adapter.trading_session()
+    if not session.is_open:
+        return {**state, "status": "market_closed", "message": session.detail}
 
-    free = {k: float(v) for k, v in balance.get("free", {}).items() if v}
-    market_data = {
-        "symbol": normalize_symbol(ticker.get("symbol", settings.trade_symbol)),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-        "balance": {"free": free},
-    }
-    await sync_positions_from_balance(
-        balance_free=free,
-        symbol=market_data["symbol"],
-        last_price=float(ticker.get("last") or 0) or None,
-        settings=settings,
-    )
-    return {**state, "market_data": market_data}
+    symbol = str(state.get("symbol") or settings.trade_symbol)
+    market_data = await adapter.fetch_snapshot(symbol, venue=settings.default_trade_market)
+    if settings.trade_market == "crypto":
+        from agent.market.klines import persist_recent_klines
+
+        await persist_recent_klines(symbol, settings=settings)
+    return {**state, "market_data": market_data, "symbol": symbol}
 
 
 async def analysis_node(state: TradeState) -> TradeState:
@@ -83,8 +75,7 @@ def route_after_analysis(state: TradeState) -> Literal["risk", "queue_pending", 
     signal = state.get("llm_signal") or {}
     if signal.get("action") == "HOLD":
         return "log_only"
-    settings = get_settings()
-    mode = settings.resolved_execution_mode
+    mode = state.get("execution_mode") or get_settings().resolved_execution_mode
     if mode == "signal_only":
         return "log_only"
     if mode == "semi_auto":
@@ -129,20 +120,25 @@ async def run_agent_tick(
     market_data: dict[str, Any] | None = None,
     thread_id: str = "default",
     session_id: str | None = None,
+    symbol: str | None = None,
     settings: Settings | None = None,
 ) -> TradeState:
     """Run one full Supervisor → Analysis → Risk → Execute cycle."""
     cfg = settings or get_settings()
+    sym = (symbol or cfg.trade_symbol).upper()
+    effective_mode = await get_effective_execution_mode(cfg)
 
     initial: TradeState = {
-        "llm_auto_execute": cfg.llm_auto_execute_effective,
+        "llm_auto_execute": effective_mode != "signal_only",
+        "execution_mode": effective_mode,
         "session_id": session_id,
+        "symbol": sym,
     }
     if market_data:
         initial["market_data"] = market_data
 
     graph = build_trade_graph()
-    async with checkpoint_saver(cfg) as checkpointer:
+    async with checkpointer_context(settings=cfg) as checkpointer:
         app = graph.compile(checkpointer=checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
         result = await app.ainvoke(initial, config)

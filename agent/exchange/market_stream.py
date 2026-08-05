@@ -10,7 +10,11 @@ from agent.exchange._client import build_binance_config
 
 
 class MarketStream:
-    """WebSocket ticker stream for Binance Demo spot via ccxt.pro."""
+    """WebSocket ticker stream for Binance Demo spot via ccxt.pro.
+
+    Agent 主循环默认走 REST（``fetch_market_snapshot``）；本模块供可选 WS 采样
+    （``sample_ticker``）或后续接入实时行情缓存。
+    """
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
@@ -72,12 +76,8 @@ async def sample_ticker(symbol: str | None = None) -> dict[str, Any]:
     settings = get_settings()
     if not settings.binance_configured:
         raise RuntimeError("BINANCE_API_KEY/SECRET not configured")
+    from agent.exchange.quotes import ticker_to_response
+
     async with MarketStream(settings) as stream:
         ticker = await stream.fetch_latest_ticker(symbol)
-    return {
-        "symbol": ticker.get("symbol"),
-        "last": ticker.get("last"),
-        "bid": ticker.get("bid"),
-        "ask": ticker.get("ask"),
-        "timestamp": ticker.get("timestamp"),
-    }
+    return ticker_to_response(ticker)

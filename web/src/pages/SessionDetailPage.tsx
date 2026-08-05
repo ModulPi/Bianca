@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import PnLChart from "../components/PnLChart";
 import SessionSummaryPanel from "../components/SessionSummaryPanel";
 import TradesTable from "../components/TradesTable";
@@ -11,6 +11,8 @@ export default function SessionDetailPage() {
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<TradeLogItem[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -27,6 +29,19 @@ export default function SessionDetailPage() {
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [id]);
 
+  async function handleExportCsv() {
+    if (!id) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await api.exportSessionCsv(id);
+    } catch (err) {
+      setExportError(err instanceof ApiError ? err.message : "导出失败");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Link to="/sessions" className="text-sm text-amber-400 hover:underline">
@@ -36,6 +51,17 @@ export default function SessionDetailPage() {
       {summary ? (
         <>
           <SessionSummaryPanel summary={summary} title="会话详情" />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => void handleExportCsv()}
+              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {exporting ? "导出中…" : "导出 CSV"}
+            </button>
+            {exportError ? <p className="text-sm text-rose-400">{exportError}</p> : null}
+          </div>
           <PnLChart trades={items} />
           <section>
             <div className="mb-3 flex items-center justify-between">

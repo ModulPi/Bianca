@@ -112,7 +112,7 @@ class MarketAnalyzer:
         user_prompt = build_user_prompt(
             market_data,
             max_trade_amount=self._settings.max_trade_amount,
-            trade_symbol=self._settings.trade_symbol,
+            trade_symbol=str(symbol),
             trading_style=self._settings.trading_style,
             min_trade_usdt=self._settings.poc_min_trade_usdt,
         )
@@ -158,16 +158,33 @@ def parse_trade_signal(raw: str, *, default_symbol: str) -> TradeSignal:
 async def check_llm(settings: Settings | None = None) -> dict[str, str]:
     cfg = settings or get_settings()
     if not cfg.llm_configured:
-        return {
-            "status": "not_configured",
-            "detail": "LLM_API_KEY not set (DeepSeek) or base_url/model missing (Ollama)",
-        }
+        hint = (
+            "Ollama: 设置 LLM_PROVIDER=ollama、LLM_BASE_URL=http://host.docker.internal:11434、LLM_MODEL=..."
+            if cfg.llm_provider == "ollama"
+            else "DeepSeek: 设置 LLM_API_KEY（.env 中 LLM_API_KEY）"
+        )
+        return {"status": "not_configured", "detail": hint}
     try:
         analyzer = MarketAnalyzer(cfg)
         reply = await analyzer.ping()
         return {
             "status": "ok",
-            "detail": f"{cfg.llm_provider} @ {cfg.llm_base_url} ({cfg.llm_model}) ping={reply[:32]}",
+            "detail": f"{cfg.llm_provider} @ {cfg.llm_base_url} ({cfg.llm_model}) ping={reply[:32] or 'empty-content-ok'}",
         }
     except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "detail": str(exc)}
+        detail = str(exc)
+        if cfg.llm_provider == "ollama" and (
+            "Connect" in detail or "connection" in detail.lower() or "111" in detail
+        ):
+            detail += (
+                " — Docker 内访问宿主机 Ollama 请用 LLM_BASE_URL=http://host.docker.internal:11434 "
+                "并确认 ollama serve 已启动、模型已 pull"
+            )
+        return {"status": "error", "detail": detail}
+
+
+async def check_ollama(settings: Settings | None = None) -> dict[str, str]:
+    cfg = settings or get_settings()
+    if cfg.llm_provider != "ollama":
+        return {"status": "skipped", "detail": f"LLM_PROVIDER={cfg.llm_provider}"}
+    return await check_llm(cfg)

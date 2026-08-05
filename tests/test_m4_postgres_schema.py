@@ -11,6 +11,8 @@ def test_pg_ddl_file_exists():
     assert "create_hypertable" in content
     assert "add_compression_policy" in content
     assert "add_retention_policy" in content
+    assert "klines_5m" in content
+    assert "timescaledb.continuous" in content
     assert "analysis_reports" in content
     assert "positions" in content
 

@@ -17,9 +17,15 @@ def evaluate_trend(
     amount = float(params.get("trade_amount_usdt") or 10.0)
     last = float(market_data.get("last") or 0)
 
-    prices: list[float] = list(state.get("prices") or [])
-    if last > 0:
-        prices.append(last)
+    klines_closes = market_data.get("klines_5m_closes") or []
+    if klines_closes:
+        prices = [float(p) for p in klines_closes if p is not None]
+        if last > 0 and (not prices or abs(prices[-1] - last) > 1e-9):
+            prices.append(last)
+    else:
+        prices = list(state.get("prices") or [])
+        if last > 0:
+            prices.append(last)
     max_len = max(slow, fast) + 5
     prices = prices[-max_len:]
     new_state = {**state, "prices": prices}

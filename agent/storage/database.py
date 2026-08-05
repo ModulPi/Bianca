@@ -50,16 +50,38 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 def _split_sql_statements(raw: str) -> list[str]:
+    """按语句分割 SQL，正确处理 `$tag$ ... $tag$` 块（含嵌套）。"""
     statements: list[str] = []
     buf: list[str] = []
+    dollar_stack: list[str] = []
+
     for line in raw.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("--"):
             continue
+
+        pos = 0
+        while pos < len(stripped):
+            if stripped[pos] != "$":
+                pos += 1
+                continue
+            j = pos + 1
+            while j < len(stripped) and stripped[j] != "$":
+                j += 1
+            if j >= len(stripped):
+                break
+            tag = stripped[pos : j + 1]
+            if dollar_stack and dollar_stack[-1] == tag:
+                dollar_stack.pop()
+            else:
+                dollar_stack.append(tag)
+            pos = j + 1
+
         buf.append(line)
-        if stripped.endswith(";"):
+        if not dollar_stack and stripped.endswith(";"):
             statements.append("\n".join(buf))
             buf = []
+
     if buf:
         statements.append("\n".join(buf))
     return statements

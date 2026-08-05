@@ -108,3 +108,11 @@ async def test_collect_klines_once_inserts_bars():
     assert len(bars) == 1
     assert isinstance(bars[0], KlineBar)
     assert bars[0].close == 105.0
+
+
+@pytest.mark.asyncio
+async def test_list_5m_bars_poc_returns_empty():
+    from agent.storage.repository import KlineRepository
+
+    repo = KlineRepository()
+    assert await repo.list_5m_bars("BTCUSDT") == []

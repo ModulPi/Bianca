@@ -10,8 +10,9 @@ from agent.graph.execute_agent import run_execute_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
 from agent.llm.prompts import normalize_symbol
+from agent.storage.database import schema_mode
 from agent.storage.json_utils import parse_json_field
-from agent.storage.repository import StrategyRepository
+from agent.storage.repository import KlineRepository, StrategyRepository
 from agent.strategy.base import StrategyEvalResult, StrategySignal, StrategyType
 from agent.strategy.dca import evaluate_dca
 from agent.strategy.grid import evaluate_grid
@@ -46,6 +47,20 @@ def evaluate_strategy(
     if strategy_type == "dca":
         return evaluate_dca(params=params, state=state, market_data=market_data, symbol=symbol)
     return evaluate_trend(params=params, state=state, market_data=market_data, symbol=symbol)
+
+
+async def enrich_market_with_klines(
+    market_data: dict[str, Any],
+    symbol: str,
+) -> dict[str, Any]:
+    """MVP 栈：趋势策略优先使用 DB 中 5m K 线收盘价序列。"""
+    if schema_mode() != "mvp":
+        return market_data
+    bars = await KlineRepository().list_5m_bars(symbol, limit=60)
+    if not bars:
+        return market_data
+    closes = [float(b["close"]) for b in reversed(bars)]
+    return {**market_data, "klines_5m_closes": closes}
 
 
 async def fetch_market(settings: Settings | None = None) -> dict[str, Any]:
@@ -107,6 +122,8 @@ async def run_strategy_tick(strategy_id: str, *, settings: Settings | None = Non
     state = parse_json_field(row.state_json)
     market_data = await fetch_market(cfg)
     symbol = market_data.get("symbol") or cfg.trade_symbol
+    if row.type == "trend":
+        market_data = await enrich_market_with_klines(market_data, symbol)
 
     result = evaluate_strategy(row.type, params=params, state=state, market_data=market_data, symbol=symbol)
     await repo.update_state(strategy_id, result.state)

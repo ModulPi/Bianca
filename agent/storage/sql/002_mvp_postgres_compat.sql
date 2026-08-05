@@ -201,6 +201,39 @@ DO $ts$ BEGIN
 EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'timescale klines policies skipped: %', SQLERRM;
 END $ts$;
 
+-- 1m → 5m 连续聚合（TimescaleDB 扩展可用时生效）
+DO $ts$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_hypertable') THEN
+        EXECUTE $mv$
+            CREATE MATERIALIZED VIEW IF NOT EXISTS klines_5m
+            WITH (timescaledb.continuous) AS
+            SELECT
+                time_bucket(INTERVAL '5 minutes', time) AS bucket,
+                symbol,
+                first(open, time) AS open,
+                max(high) AS high,
+                min(low) AS low,
+                last(close, time) AS close,
+                sum(volume) AS volume,
+                sum(trades)::INTEGER AS trades
+            FROM klines
+            WHERE interval = '1m'
+            GROUP BY bucket, symbol
+            WITH NO DATA
+        $mv$;
+        IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'add_continuous_aggregate_policy') THEN
+            PERFORM add_continuous_aggregate_policy(
+                'klines_5m',
+                start_offset => INTERVAL '1 hour',
+                end_offset => INTERVAL '5 minutes',
+                schedule_interval => INTERVAL '5 minutes',
+                if_not_exists => TRUE
+            );
+        END IF;
+    END IF;
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'timescale klines_5m continuous aggregate skipped: %', SQLERRM;
+END $ts$;
+
 -- Agent 默认策略（无 strategy_id 的 Agent 交易挂靠此记录）
 INSERT INTO strategies (
     id, name, type, market, execution_mode, params_json, state_json,

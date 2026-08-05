@@ -1,6 +1,8 @@
 from sqlalchemy import Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from agent.storage.json_column import JsonText
+
 
 class Base(DeclarativeBase):
     pass
@@ -37,7 +39,7 @@ class RiskEvent(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
-    detail: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    detail: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
     related_trade_id: Mapped[str | None] = mapped_column(String, nullable=True)
     related_strategy_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -53,7 +55,7 @@ class DecisionLog(Base):
     model_used: Mapped[str] = mapped_column(String, nullable=False)
     prompt_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_output: Mapped[str] = mapped_column(Text, nullable=False)
-    parsed_signal: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    parsed_signal: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -75,10 +77,10 @@ class SessionSummaryRow(Base):
     ended_at: Mapped[str | None] = mapped_column(String, nullable=True)
     tick_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trading_style: Mapped[str] = mapped_column(String, nullable=False, default="conservative")
-    usage_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    trades_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    pnl_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    positions_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    usage_json: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
+    trades_json: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
+    pnl_json: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
+    positions_json: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
     loop_closed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -91,8 +93,8 @@ class PendingSignalRow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     strategy_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    signal_json: Mapped[str] = mapped_column(Text, nullable=False)
-    market_data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    signal_json: Mapped[str] = mapped_column(JsonText, nullable=False)
+    market_data_json: Mapped[str] = mapped_column(JsonText, nullable=False)
     decision_id: Mapped[str | None] = mapped_column(String, nullable=True)
     session_id: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
@@ -111,8 +113,8 @@ class StrategyRow(Base):
     type: Mapped[str] = mapped_column(String, nullable=False)
     market: Mapped[str] = mapped_column(String, nullable=False, default="spot")
     execution_mode: Mapped[str] = mapped_column(String, nullable=False, default="auto")
-    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    state_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    params_json: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
+    state_json: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
     status: Mapped[str] = mapped_column(String, nullable=False, default="created")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -131,7 +133,7 @@ class PaperValidationRow(Base):
     started_at: Mapped[str] = mapped_column(String, nullable=False)
     validated_at: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="running")
-    metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    metrics_json: Mapped[str] = mapped_column(JsonText, nullable=False, default="{}")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 

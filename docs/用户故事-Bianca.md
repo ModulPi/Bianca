@@ -180,7 +180,7 @@
 
 ---
 
-### US-M07：基础设施升级（M4） 🟡
+### US-M07：基础设施升级（M4） ✅
 > **作为** 开发者  
 > **我想要** 业务数据迁移到 PostgreSQL + TimescaleDB，并用 Redis 做缓存  
 > **以便** MVP 可水平扩展、支持时序 K 线  
@@ -195,10 +195,11 @@
 - [x] `positions` 表读写 + `GET /api/v1/positions`
 - [x] TimescaleDB 压缩 / retention 策略（002 DDL）
 - [x] pytest 稳定化 + PG 集成测试脚手架
-- [ ] TimescaleDB 正式镜像现场验证
-- [ ] TimescaleDB 连续聚合
-- [ ] 002 纯 schema 对齐
-- [ ] M5–M8 PG 栈 Live E2E 现场跑通
+- [x] TimescaleDB 正式镜像 + 连续聚合（`klines_5m`）
+- [x] JSONB 双栈 ORM（`JsonText`）
+- [x] PG 集成测试 7/7 + `verify_m4_e2e.ps1`
+- [ ] 002 纯 schema 对齐（P2）
+- [ ] Live 全链路（需 `BINANCE_PROXY`）
 
 **优先级：** MVP P0 | **Story Point：** 8
 
@@ -225,5 +226,5 @@
 |------|------|------|-------------|
 | **PoC** | US-P01 ~ US-P06 | ✅ 已完成 | **32** |
 | **MVP** | US-M01 ~ US-M06、US-M08 | ✅ PoC/SQLite 已完成 | ~52 |
-| **MVP** | US-M07（M4 深化） | 🟡 进行中 | ~8 |
+| **MVP** | US-M07（M4） | ✅ 已完成 | ~8 |
 | **MVP** | 合约真实对接、Live 验证 | ❌ 待开始 | ~13 |

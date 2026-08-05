@@ -28,8 +28,12 @@ async def test_pending_signal_confirm_flow(client):
     )
 
     mock_order = {"id": "ord-1", "filled": 0.00015, "average": 65000.0, "status": "closed"}
-    with patch("agent.graph.execute_agent._place_market_order", AsyncMock(return_value=mock_order)):
-        resp = await client.post(f"/api/v1/pending-signals/{row.id}/confirm")
+    mock_demo = AsyncMock()
+    mock_demo.__aenter__ = AsyncMock(return_value=mock_demo)
+    mock_demo.__aexit__ = AsyncMock(return_value=False)
+    with patch("agent.graph.execute_agent.SpotDemoExchange", return_value=mock_demo):
+        with patch("agent.graph.execute_agent._place_market_order", AsyncMock(return_value=mock_order)):
+            resp = await client.post(f"/api/v1/pending-signals/{row.id}/confirm")
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] in {"filled", "risk_approved", "submitted"}

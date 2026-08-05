@@ -27,3 +27,16 @@ def test_trend_hold_insufficient_samples():
     state = {}
     r = evaluate_trend(params=params, state=state, market_data=market, symbol="BTCUSDT")
     assert r.signal.action == "HOLD"
+
+
+def test_trend_uses_klines_5m_closes():
+    closes = [float(64000 + i * 10) for i in range(25)]
+    market = {
+        "last": closes[-1],
+        "klines_5m_closes": closes,
+        "balance": {"free": {"USDT": 1000, "BTC": 0}},
+    }
+    params = {"fast_period": 5, "slow_period": 20, "trade_amount_usdt": 10}
+    r = evaluate_trend(params=params, state={}, market_data=market, symbol="BTCUSDT")
+    assert r.signal.action in {"BUY", "HOLD", "SELL"}
+    assert len(r.state.get("prices") or []) >= 20

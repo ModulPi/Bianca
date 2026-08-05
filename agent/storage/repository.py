@@ -762,6 +762,41 @@ class KlineRepository:
             result = await db.execute(stmt, params)
             return int(result.scalar_one())
 
+    async def list_5m_bars(self, symbol: str, *, limit: int = 100) -> list[dict]:
+        """从 Timescale 连续聚合视图读取 5m K 线；视图不可用时返回空列表。"""
+        if schema_mode() != "mvp":
+            return []
+        stmt = text(
+            """
+            SELECT bucket AS time, symbol, open, high, low, close, volume, trades
+            FROM klines_5m
+            WHERE symbol = :symbol
+            ORDER BY bucket DESC
+            LIMIT :limit
+            """
+        )
+        factory = get_session_factory()
+        try:
+            async with factory() as db:
+                result = await db.execute(stmt, {"symbol": symbol, "limit": limit})
+                rows = result.mappings().all()
+        except Exception:  # noqa: BLE001 — 视图未建或非 Timescale 环境
+            return []
+        return [
+            {
+                "time": row["time"],
+                "symbol": row["symbol"],
+                "interval": "5m",
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"],
+                "trades": row["trades"],
+            }
+            for row in rows
+        ]
+
 
 class PositionRepository:
     _UPSERT_SQL = text(

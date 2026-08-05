@@ -51,6 +51,18 @@ if ($health.redis -ne "ok") {
     Write-Host "FAIL: expected redis=ok" -ForegroundColor Red
     exit 1
 }
+if ($health.checkpointer_backend -ne "postgresql") {
+    Write-Host "FAIL: expected checkpointer_backend=postgresql" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "==> Positions API" -ForegroundColor Cyan
+$positions = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/positions" -TimeoutSec 10
+if ($positions.schema_mode -ne "mvp") {
+    Write-Host "FAIL: expected positions.schema_mode=mvp" -ForegroundColor Red
+    exit 1
+}
+Write-Host "positions total: $($positions.total)" -ForegroundColor Green
 
 Write-Host "==> PostgreSQL tables" -ForegroundColor Cyan
 docker compose @composeFiles exec -T postgres psql -U bianca -d bianca -c "\dt"

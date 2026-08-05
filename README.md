@@ -99,6 +99,32 @@ docker compose up -d --build
 
 半自动确认（WebSocket + confirm）依赖 M6，当前仅展示执行模式说明。
 
+## M4 栈（PostgreSQL + Redis）
+
+PoC 默认 SQLite；MVP 基础设施通过 Docker Compose 叠加 PG + Redis：
+
+```bash
+# 启动 M4 全栈（API + Web + PostgreSQL + Redis）
+docker compose -f docker-compose.yml -f docker-compose.m4.yml up -d --build
+
+# 验收（PowerShell）
+powershell -ExecutionPolicy Bypass -File .\scripts\verify_m4_stack.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\verify_m4_e2e.ps1
+```
+
+`.env` 中 M4 相关项由 compose 覆盖：
+
+```bash
+DATABASE_URL=postgresql+asyncpg://bianca:bianca@postgres:5432/bianca
+REDIS_URL=redis://redis:6379/0
+```
+
+Health 应返回 `database_backend=postgresql`、`schema_mode=mvp`、`checkpointer_backend=postgresql`。
+
+持仓快照（MVP 栈）：`GET /api/v1/positions`（tick / 成交后从 Demo 余额同步）。
+
+详见 `docs/module-scheduling/里程碑清单-Bianca.md` M4 章节。
+
 ## 许可证
 
 MIT

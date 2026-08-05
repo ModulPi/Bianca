@@ -191,6 +191,16 @@ DO $ts$ BEGIN IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_hypertabl
 CREATE UNIQUE INDEX IF NOT EXISTS uq_klines_time_symbol_interval ON klines(time, symbol, interval);
 CREATE INDEX IF NOT EXISTS idx_klines_symbol_interval_time ON klines(symbol, interval, time DESC);
 
+-- TimescaleDB 压缩 / 保留（扩展可用时生效）
+DO $ts$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'add_compression_policy') THEN
+        EXECUTE 'ALTER TABLE klines SET (timescaledb.compress, timescaledb.compress_segmentby = ''symbol,interval'')';
+        PERFORM add_compression_policy('klines', INTERVAL '7 days');
+        PERFORM add_retention_policy('klines', INTERVAL '90 days');
+    END IF;
+EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'timescale klines policies skipped: %', SQLERRM;
+END $ts$;
+
 -- Agent 默认策略（无 strategy_id 的 Agent 交易挂靠此记录）
 INSERT INTO strategies (
     id, name, type, market, execution_mode, params_json, state_json,

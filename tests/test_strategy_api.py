@@ -36,7 +36,7 @@ async def test_create_and_list_strategies(client):
 async def test_strategy_tick_hold(client):
     create = await client.post(
         "/api/v1/strategies",
-        json={"name": "DCA", "type": "dca", "execution_mode": "auto"},
+        json={"name": "趋势", "type": "trend", "execution_mode": "auto"},
     )
     sid = create.json()["id"]
     await client.post(f"/api/v1/strategies/{sid}/start")
@@ -52,4 +52,4 @@ async def test_strategy_tick_hold(client):
     with patch("agent.strategy.engine.fetch_market", AsyncMock(return_value=market)):
         tick = await client.post(f"/api/v1/strategies/{sid}/tick")
     assert tick.status_code == 200
-    assert tick.json()["status"] in {"hold", "filled", "risk_rejected", "awaiting_confirmation", "risk_approved"}
+    assert tick.json()["status"] == "hold"

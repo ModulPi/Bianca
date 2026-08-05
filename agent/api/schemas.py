@@ -8,6 +8,7 @@ class HealthResponse(BaseModel):
     schema_mode: str = "poc"
     redis: str = "not_configured"
     redis_detail: str | None = None
+    checkpointer_backend: str = "sqlite"
     binance_demo: str
     binance_detail: str | None = None
     llm_provider: str
@@ -337,3 +338,23 @@ class TradingModeResponse(BaseModel):
 class FuturesStatusResponse(BaseModel):
     enabled: bool
     message: str
+
+
+class PositionItem(BaseModel):
+    id: str
+    strategy_id: str
+    symbol: str
+    market: str
+    quantity: float
+    entry_price: float
+    current_price: float | None = None
+    unrealized_pnl: float | None = None
+    realized_pnl: float | None = None
+    leverage: int | None = None
+    updated_at: str
+
+
+class PositionListResponse(BaseModel):
+    items: list[PositionItem]
+    total: int
+    schema_mode: str

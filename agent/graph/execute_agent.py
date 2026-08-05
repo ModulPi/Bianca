@@ -5,6 +5,7 @@ from typing import Any
 from agent.config import Settings, get_settings
 from agent.exchange.spot_demo import SpotDemoExchange, resolve_market_symbol
 from agent.graph.state import TradeState
+from agent.positions.sync import sync_positions_from_exchange
 from agent.storage.repository import AgentConfigRepository, TradeRepository
 
 
@@ -73,6 +74,7 @@ async def run_execute_agent(state: TradeState, *, settings: Settings | None = No
         )
 
     await _update_daily_pnl(cfg, action, float(amount), float(filled_price or 0))
+    await sync_positions_from_exchange(settings=cfg)
 
     return {
         **state,

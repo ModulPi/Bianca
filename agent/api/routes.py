@@ -16,6 +16,8 @@ from agent.api.schemas import (
     DecisionLogItem,
     HealthResponse,
     MessageResponse,
+    PositionListResponse,
+    PositionItem,
     RiskEventItem,
     RiskEventListResponse,
     TickerResponse,
@@ -24,6 +26,7 @@ from agent.api.schemas import (
     TradeSignalResponse,
     UsageSummaryResponse,
 )
+from agent.checkpoint.store import checkpointer_backend
 from agent.cache.redis_client import redis_health
 from agent.config import get_settings
 from agent.confirmation.service import confirm_pending_signal
@@ -34,7 +37,7 @@ from agent.llm.analyzer import check_llm
 from agent.runner import get_runner
 from agent.storage.database import get_engine, schema_mode
 from agent.storage.json_utils import parse_json_field
-from agent.storage.repository import DecisionRepository, RiskEventRepository, TradeRepository
+from agent.storage.repository import DecisionRepository, PositionRepository, RiskEventRepository, TradeRepository
 
 router = APIRouter(prefix="/api/v1")
 
@@ -73,6 +76,7 @@ async def health() -> HealthResponse:
         schema_mode=schema_mode(),
         redis=redis.get("status", "not_configured"),
         redis_detail=redis.get("detail"),
+        checkpointer_backend=checkpointer_backend(settings),
         binance_demo=binance["status"],
         binance_detail=binance.get("detail"),
         llm_provider=settings.llm_provider,
@@ -386,3 +390,35 @@ async def strategy_confirm(strategy_id: str) -> ConfirmPendingResponse:
         message=state.get("message"),
         trade_log_id=state.get("trade_log_id"),
     )
+
+
+@router.get("/positions", response_model=PositionListResponse)
+async def list_positions(
+    strategy_id: str | None = None,
+    limit: int = 50,
+) -> PositionListResponse:
+    """M4：从 positions 表读取持仓快照（仅 schema_mode=mvp）。"""
+    mode = schema_mode()
+    repo = PositionRepository()
+    if strategy_id:
+        rows = await repo.list_by_strategy(strategy_id)
+    else:
+        rows = await repo.list_recent(limit=limit)
+
+    items = [
+        PositionItem(
+            id=row.id,
+            strategy_id=row.strategy_id,
+            symbol=row.symbol,
+            market=row.market,
+            quantity=row.quantity,
+            entry_price=row.entry_price,
+            current_price=row.current_price,
+            unrealized_pnl=row.unrealized_pnl,
+            realized_pnl=row.realized_pnl,
+            leverage=row.leverage,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]
+    return PositionListResponse(items=items, total=len(items), schema_mode=mode)

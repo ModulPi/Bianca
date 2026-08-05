@@ -121,13 +121,14 @@ GET    /summary/daily             # 按日汇总
 POST   /summary/sessions/{id}/close  # 手动关闭当前会话并落库
 GET    /checkpoints/threads       # Checkpointer 线程列表
 GET    /checkpoints/threads/{id}/history  # 决策链路回放
+GET    /positions                 # 持仓快照（schema_mode=mvp）
 GET    /exchange/balance          # Demo 账户余额
 GET    /exchange/ticker           # 实时 ticker
 POST   /analysis/run              # 单次 LLM 分析（调试）
 POST   /agent/tick                # 手动触发单次 tick
 ```
 
-会话汇总详见《汇总管理模块设计-Bianca.md》。Checkpointer 数据存于 `data/checkpoints.sqlite`，Agent 每次启停使用独立 `thread_id`（等于 `session_id`）。
+会话汇总详见《汇总管理模块设计-Bianca.md》。Checkpointer 按 `DATABASE_URL` 自动选择后端：PoC 为 `data/checkpoints.sqlite`（AsyncSqliteSaver），MVP 为 PostgreSQL（AsyncPostgresSaver，表由 LangGraph 自动 `setup()`）。Health 返回 `checkpointer_backend` 字段。Agent 每次启停使用独立 `thread_id`（等于 `session_id`）。
 
 ---
 

@@ -16,6 +16,7 @@ dependencies = [
     "httpx>=0.27",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
+    "langgraph-checkpoint-postgres>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -36,3 +37,6 @@ include = ["agent*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "pg: PostgreSQL M4 stack integration (BIANCA_PG_E2E=1 + DATABASE_URL)",
+]

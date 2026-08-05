@@ -133,3 +133,23 @@ class PaperValidationRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="running")
     metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class PositionRow(Base):
+    __tablename__ = "positions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(String, nullable=False)
+    symbol: Mapped[str] = mapped_column(String, nullable=False)
+    market: Mapped[str] = mapped_column(String, nullable=False, default="spot")
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    current_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unrealized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True, default=0)
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True, default=0)
+    leverage: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_positions_strategy_symbol", PositionRow.strategy_id, PositionRow.symbol, unique=True)

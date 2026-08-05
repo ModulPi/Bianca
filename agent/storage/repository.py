@@ -18,6 +18,7 @@ from agent.storage.models import (
     DecisionLog,
     PaperValidationRow,
     PendingSignalRow,
+    PositionRow,
     RiskEvent,
     SessionSummaryRow,
     StrategyRow,
@@ -760,3 +761,89 @@ class KlineRepository:
         async with factory() as db:
             result = await db.execute(stmt, params)
             return int(result.scalar_one())
+
+
+class PositionRepository:
+    _UPSERT_SQL = text(
+        """
+        INSERT INTO positions (
+            id, strategy_id, symbol, market, quantity, entry_price, current_price,
+            unrealized_pnl, realized_pnl, leverage, created_at, updated_at
+        )
+        VALUES (
+            :id, :strategy_id, :symbol, :market, :quantity, :entry_price, :current_price,
+            0, 0, 1, :created_at, :updated_at
+        )
+        ON CONFLICT (strategy_id, symbol) DO UPDATE SET
+            quantity = EXCLUDED.quantity,
+            current_price = EXCLUDED.current_price,
+            updated_at = EXCLUDED.updated_at
+        """
+    )
+
+    async def upsert(
+        self,
+        *,
+        strategy_id: str,
+        symbol: str,
+        quantity: float,
+        current_price: float | None = None,
+        market: str = "spot",
+        updated_at: str | None = None,
+    ) -> None:
+        if schema_mode() != "mvp":
+            return
+
+        now = updated_at or _utc_now()
+        entry = float(current_price or 0)
+        factory = get_session_factory()
+        async with factory() as db:
+            existing = await db.execute(
+                select(PositionRow.id).where(
+                    PositionRow.strategy_id == strategy_id,
+                    PositionRow.symbol == symbol,
+                )
+            )
+            row_id = existing.scalar_one_or_none() or str(uuid.uuid4())
+            await db.execute(
+                self._UPSERT_SQL,
+                {
+                    "id": row_id,
+                    "strategy_id": strategy_id,
+                    "symbol": symbol,
+                    "market": market,
+                    "quantity": quantity,
+                    "entry_price": entry,
+                    "current_price": current_price,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+            await db.commit()
+
+    async def list_by_strategy(
+        self, strategy_id: str, *, min_qty: float = 1e-8
+    ) -> list[PositionRow]:
+        if schema_mode() != "mvp":
+            return []
+
+        stmt = (
+            select(PositionRow)
+            .where(PositionRow.strategy_id == strategy_id)
+            .where(PositionRow.quantity >= min_qty)
+            .order_by(PositionRow.updated_at.desc())
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def list_recent(self, limit: int = 50) -> list[PositionRow]:
+        if schema_mode() != "mvp":
+            return []
+
+        stmt = select(PositionRow).order_by(PositionRow.updated_at.desc()).limit(limit)
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return list(result.scalars().all())

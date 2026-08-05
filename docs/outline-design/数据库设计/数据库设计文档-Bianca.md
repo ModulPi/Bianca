@@ -113,12 +113,17 @@ CREATE INDEX idx_risk_events_time ON risk_events(created_at DESC);
 
 ## 5. LangGraph Checkpointer
 
-PoC 使用 **SqliteSaver**，Checkpointer 数据库文件独立于业务 SQLite：
+| 栈 | 后端 | 存储位置 |
+|----|------|----------|
+| PoC（SQLite） | `AsyncSqliteSaver` | `data/checkpoints.sqlite` |
+| MVP（PostgreSQL） | `AsyncPostgresSaver` | PG 库内 `checkpoints` 等 LangGraph 表 |
+
+工厂：`agent/checkpoint/store.py`（`checkpoint_saver()` / `checkpointer_backend()`）。业务库与 Checkpointer 在 MVP 栈共用同一 `DATABASE_URL`。
+
+PoC 业务数据文件：
 
 ```
 data/
-├── bianca.db          # 业务数据
-└── checkpoints.db     # LangGraph 状态
+├── bianca.db          # 业务数据（SQLite）
+└── checkpoints.sqlite # LangGraph 状态（SQLite 栈）
 ```
-
-MVP 可迁移至 PostgresSaver。

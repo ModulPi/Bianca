@@ -9,6 +9,8 @@ def test_pg_ddl_file_exists():
     content = _PG_DDL_PATH.read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS strategies" in content
     assert "create_hypertable" in content
+    assert "add_compression_policy" in content
+    assert "add_retention_policy" in content
     assert "analysis_reports" in content
     assert "positions" in content
 

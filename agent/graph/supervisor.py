@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
+from agent.checkpoint.store import checkpoint_saver
 from agent.config import Settings, get_settings
 from agent.exchange.spot_demo import SpotDemoExchange
 from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_agent
@@ -14,6 +14,7 @@ from agent.graph.pending_agent import run_pending_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
 from agent.llm.prompts import normalize_symbol
+from agent.positions.sync import sync_positions_from_balance
 from agent.storage.repository import TradeRepository
 
 
@@ -38,6 +39,12 @@ async def fetch_market_node(state: TradeState) -> TradeState:
         "timestamp": ticker.get("timestamp"),
         "balance": {"free": free},
     }
+    await sync_positions_from_balance(
+        balance_free=free,
+        symbol=market_data["symbol"],
+        last_price=float(ticker.get("last") or 0) or None,
+        settings=settings,
+    )
     return {**state, "market_data": market_data}
 
 
@@ -126,8 +133,6 @@ async def run_agent_tick(
 ) -> TradeState:
     """Run one full Supervisor → Analysis → Risk → Execute cycle."""
     cfg = settings or get_settings()
-    cfg.data_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = cfg.data_dir / "checkpoints.sqlite"
 
     initial: TradeState = {
         "llm_auto_execute": cfg.llm_auto_execute_effective,
@@ -137,7 +142,7 @@ async def run_agent_tick(
         initial["market_data"] = market_data
 
     graph = build_trade_graph()
-    async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
+    async with checkpoint_saver(cfg) as checkpointer:
         app = graph.compile(checkpointer=checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
         result = await app.ainvoke(initial, config)

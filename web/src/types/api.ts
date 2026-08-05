@@ -104,6 +104,11 @@ export interface UsageSummary {
 export interface HealthResponse {
   status: string;
   database: string;
+  database_backend?: string;
+  schema_mode?: string;
+  redis?: string;
+  redis_detail?: string | null;
+  checkpointer_backend?: string;
   binance_demo: string;
   binance_detail?: string | null;
   llm_provider: string;
@@ -252,4 +257,35 @@ export interface TradingModeResponse {
   mode: string;
   can_enable_live: boolean;
   validation_status: string;
+}
+
+export interface NotifyStatusResponse {
+  telegram_configured: boolean;
+  notify_on_session_close: boolean;
+  notify_on_risk_reject: boolean;
+}
+
+export interface FuturesStatusResponse {
+  enabled: boolean;
+  message: string;
+}
+
+export interface PositionItem {
+  id: string;
+  strategy_id: string;
+  symbol: string;
+  market: string;
+  quantity: number;
+  entry_price: number;
+  current_price: number | null;
+  unrealized_pnl: number | null;
+  realized_pnl: number | null;
+  leverage: number | null;
+  updated_at: string;
+}
+
+export interface PositionListResponse {
+  items: PositionItem[];
+  total: number;
+  schema_mode: string;
 }

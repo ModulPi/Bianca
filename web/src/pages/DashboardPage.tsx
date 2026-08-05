@@ -7,8 +7,10 @@ import ExecutionModeBanner from "../components/ExecutionModeBanner";
 import ConfirmQueue from "../components/ConfirmQueue";
 import LoopClosedBadge from "../components/LoopClosedBadge";
 import PnLChart from "../components/PnLChart";
+import PositionsTable from "../components/PositionsTable";
 import SessionSummaryPanel from "../components/SessionSummaryPanel";
 import StatCard from "../components/StatCard";
+import SystemHealthPanel from "../components/SystemHealthPanel";
 import TradesTable from "../components/TradesTable";
 import { usePolling } from "../hooks/usePolling";
 
@@ -37,6 +39,7 @@ export default function DashboardPage() {
   const healthPoll = usePolling(() => api.health(), 30000);
   const balancePoll = usePolling(fetchBalanceTicker, 20000);
   const dailyPoll = usePolling(() => api.summaryDaily(), 60000);
+  const positionsPoll = usePolling(() => api.positions(undefined, 10), 20000);
 
   const health = healthPoll.data;
   const sessionId = statusPoll.data?.session_id;
@@ -49,6 +52,8 @@ export default function DashboardPage() {
       </header>
 
       <ExecutionModeBanner status={statusPoll.data} />
+
+      <SystemHealthPanel health={health} />
 
       {statusPoll.data?.execution_mode === "semi_auto" && (
         <section>
@@ -81,6 +86,18 @@ export default function DashboardPage() {
       </div>
 
       <PnLChart trades={tradesPoll.data?.items ?? []} />
+
+      {positionsPoll.data?.schema_mode === "mvp" && (positionsPoll.data.items.length ?? 0) > 0 ? (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-medium">DB 持仓快照</h2>
+            <Link to="/positions" className="text-xs text-amber-400 hover:underline">
+              查看全部
+            </Link>
+          </div>
+          <PositionsTable items={positionsPoll.data.items.slice(0, 5)} />
+        </section>
+      ) : null}
 
       {summaryPoll.error ? (
         <p className="text-sm text-rose-400">{summaryPoll.error}</p>

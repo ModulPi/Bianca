@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import CheckpointsPage from "./pages/CheckpointsPage";
 import DashboardPage from "./pages/DashboardPage";
 import DecisionsPage from "./pages/DecisionsPage";
+import PositionsPage from "./pages/PositionsPage";
 import RiskPage from "./pages/RiskPage";
 import SessionDetailPage from "./pages/SessionDetailPage";
 import SessionsPage from "./pages/SessionsPage";
@@ -18,6 +19,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<DashboardPage />} />
         <Route path="trades" element={<TradesPage />} />
+        <Route path="positions" element={<PositionsPage />} />
         <Route path="sessions" element={<SessionsPage />} />
         <Route path="sessions/:id" element={<SessionDetailPage />} />
         <Route path="strategies" element={<StrategiesPage />} />

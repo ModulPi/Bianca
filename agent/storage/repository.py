@@ -490,6 +490,21 @@ class PendingSignalRepository:
             result = await db.execute(stmt)
             return list(result.scalars().all())
 
+    async def get_latest_pending_for_strategy(self, strategy_id: str) -> PendingSignalRow | None:
+        stmt = (
+            select(PendingSignalRow)
+            .where(
+                PendingSignalRow.strategy_id == strategy_id,
+                PendingSignalRow.status == "pending",
+            )
+            .order_by(PendingSignalRow.created_at.desc())
+            .limit(1)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            result = await db.execute(stmt)
+            return result.scalar_one_or_none()
+
     async def update_status(self, pending_id: str, status: str) -> PendingSignalRow | None:
         factory = get_session_factory()
         async with factory() as db:

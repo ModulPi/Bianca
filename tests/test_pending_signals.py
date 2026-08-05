@@ -62,14 +62,25 @@ async def test_pending_signal_reject(client):
 
 @pytest.mark.asyncio
 async def test_strategy_confirm_alias(client):
-    repo = PendingSignalRepository()
-    row = await repo.create(
+    from agent.storage.repository import StrategyRepository
+
+    repo = StrategyRepository()
+    strategy = await repo.create(
+        name="半自动DCA",
+        strategy_type="dca",
+        execution_mode="semi_auto",
+        params={"interval_minutes": 60, "buy_amount_usdt": 10},
+    )
+    sid = strategy.id
+    pending_repo = PendingSignalRepository()
+    await pending_repo.create(
         signal={"action": "BUY", "symbol": "BTCUSDT", "amount": 5.0, "confidence": 0.95, "reason": "alias"},
         market_data={"symbol": "BTCUSDT", "last": 65000.0, "balance": {"free": {"USDT": 500.0, "BTC": 0}}},
         decision_id=None,
         session_id=None,
         ttl_minutes=30,
+        strategy_id=sid,
     )
     with patch("agent.graph.execute_agent._place_market_order", AsyncMock(return_value={"id": "x", "filled": 1, "average": 1})):
-        resp = await client.post(f"/api/v1/strategies/{row.id}/confirm")
+        resp = await client.post(f"/api/v1/strategies/{sid}/confirm")
     assert resp.status_code == 200

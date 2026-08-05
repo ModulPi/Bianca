@@ -22,7 +22,7 @@ from agent.config import clear_settings_cache
 from agent.confirmation.service import expire_pending_signals
 from agent.market.kline_collector import run_kline_collector_loop
 from agent.runner import get_runner
-from agent.strategy.runner import get_strategy_runner
+from agent.strategy.runner import get_strategy_runner, resume_strategy_runner_if_needed
 from agent.cache.redis_client import close_redis, init_redis
 from agent.storage.database import close_db, init_db
 
@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     clear_settings_cache()
     await init_db()
     await init_redis()
+    await resume_strategy_runner_if_needed()
     expire_task = asyncio.create_task(_expire_pending_loop())
     kline_task = asyncio.create_task(run_kline_collector_loop())
     yield

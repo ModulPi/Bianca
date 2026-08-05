@@ -29,7 +29,7 @@ from agent.api.schemas import (
 from agent.checkpoint.store import checkpointer_backend
 from agent.cache.redis_client import redis_health
 from agent.config import get_settings
-from agent.confirmation.service import confirm_pending_signal
+from agent.confirmation.service import confirm_pending_for_strategy, confirm_pending_signal
 from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo
 from agent.exchange._client import format_binance_error
 from agent.graph.supervisor import run_agent_tick
@@ -377,9 +377,9 @@ async def exchange_ticker(symbol: str | None = None) -> TickerResponse:
 
 @router.post("/strategies/{strategy_id}/confirm", response_model=ConfirmPendingResponse)
 async def strategy_confirm(strategy_id: str) -> ConfirmPendingResponse:
-    """US-M02：半自动确认。PoC 阶段 strategy_id 即 pending_signal_id。"""
+    """半自动：确认该策略最新 pending 信号。"""
     try:
-        result = await confirm_pending_signal(strategy_id)
+        result = await confirm_pending_for_strategy(strategy_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

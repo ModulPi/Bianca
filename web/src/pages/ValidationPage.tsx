@@ -5,6 +5,8 @@ import type { ValidationStatus } from "../types/api";
 
 export default function ValidationPage() {
   const { data, error, loading, refresh } = usePolling(() => api.validationStatus(), 10000);
+  const notifyPoll = usePolling(() => api.notifyStatus(), 30000);
+  const futuresPoll = usePolling(() => api.futuresStatus(), 60000);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -71,8 +73,18 @@ export default function ValidationPage() {
             <h2 className="font-medium text-amber-300">运行模式</h2>
             <p className="text-sm text-zinc-300">当前: {data.trading_mode}</p>
             <p className="text-xs text-zinc-500">
-              Telegram: {data.telegram_configured ? "已配置" : "未配置"} · 合约 API:{" "}
-              {data.futures_enabled ? "已启用" : "PoC stub"}
+              Telegram: {data.telegram_configured ? "已配置" : "未配置"}
+              {notifyPoll.data ? (
+                <>
+                  {" "}
+                  · 会话通知 {notifyPoll.data.notify_on_session_close ? "开" : "关"} · 风控通知{" "}
+                  {notifyPoll.data.notify_on_risk_reject ? "开" : "关"}
+                </>
+              ) : null}
+            </p>
+            <p className="text-xs text-zinc-500">
+              合约 API: {futuresPoll.data?.enabled ? "已启用" : "stub"} —{" "}
+              {futuresPoll.data?.message ?? "加载中…"}
             </p>
             <div className="flex flex-wrap gap-2 pt-2">
               <button
@@ -104,6 +116,14 @@ export default function ValidationPage() {
           onClick={() => run(() => api.notifyTest())}
         >
           Telegram 测试
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm"
+          onClick={() => run(() => api.notifyDailyDigest())}
+        >
+          发送日摘要
         </button>
         <button
           type="button"

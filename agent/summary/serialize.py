@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
 from agent.storage.json_utils import parse_json_field
+from agent.storage.models import SessionSummaryRow
 
 
 def session_row_to_summary(row: SessionSummaryRow) -> dict[str, Any]:

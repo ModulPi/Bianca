@@ -17,6 +17,7 @@ from agent.storage.repository import (
     TradeRepository,
 )
 from agent.summary.pnl import PnLResult, compute_pnl
+from agent.summary.positions import resolve_session_positions
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,11 @@ async def build_session_summary(
     trades_stats = _count_trades(trades)
     usage = await _usage_in_window(started_at, ended_at)
     daily_pnl_legacy = await config_repo.get_daily_pnl()
+
+    if positions is None:
+        positions, resolved_mark = await resolve_session_positions(settings=cfg)
+        if mark_price is None:
+            mark_price = resolved_mark
 
     base = base_asset_for_symbol(cfg.trade_symbol)
     base_free = float((positions or {}).get("base_free") or 0)

@@ -7,6 +7,9 @@ import type {
   DecisionListResponse,
   HealthResponse,
   MessageResponse,
+  PositionListResponse,
+  FuturesStatusResponse,
+  NotifyStatusResponse,
   PendingSignalListResponse,
   RiskEventListResponse,
   SessionListResponse,
@@ -81,6 +84,12 @@ export const api = {
   balance: () => request<BalanceResponse>("/exchange/balance"),
   ticker: (symbol?: string) =>
     request<TickerResponse>(`/exchange/ticker${symbol ? `?symbol=${symbol}` : ""}`),
+  positions: (strategyId?: string, limit = 50) => {
+    const q = new URLSearchParams();
+    if (strategyId) q.set("strategy_id", strategyId);
+    q.set("limit", String(limit));
+    return request<PositionListResponse>(`/positions?${q.toString()}`);
+  },
   decisions: (limit = 50) => request<DecisionListResponse>(`/decisions?limit=${limit}`),
   riskEvents: (limit = 50) => request<RiskEventListResponse>(`/risk/events?limit=${limit}`),
   checkpointThreads: (limit = 50) =>
@@ -115,7 +124,12 @@ export const api = {
   validationStatus: () => request<ValidationStatus>("/validation/status"),
   validationEvaluate: () => request<ValidationStatus>("/validation/evaluate", { method: "POST" }),
   validationReset: () => request<MessageResponse>("/validation/reset", { method: "POST" }),
+  notifyStatus: () => request<NotifyStatusResponse>("/notify/status"),
   notifyTest: () => request<MessageResponse>("/notify/test", { method: "POST" }),
+  notifyDailyDigest: () =>
+    request<MessageResponse>("/notify/daily-digest", { method: "POST" }),
+  tradingModeGet: () => request<TradingModeResponse>("/trading/mode"),
+  futuresStatus: () => request<FuturesStatusResponse>("/futures/status"),
   setTradingMode: (mode: string) =>
     request<TradingModeResponse>("/trading/mode", {
       method: "POST",

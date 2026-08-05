@@ -125,5 +125,5 @@ async def futures_status() -> FuturesStatusResponse:
     cfg = get_settings()
     return FuturesStatusResponse(
         enabled=cfg.futures_enabled,
-        message="合约 API 尚未对接；PoC 仅支持 Demo 现货" if not cfg.futures_enabled else "合约 API 已启用",
+        message="合约 API 尚未对接；MVP 仅支持 Demo 现货" if not cfg.futures_enabled else "合约 API 已启用",
     )

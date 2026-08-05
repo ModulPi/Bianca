@@ -55,6 +55,18 @@ try {
     Write-Host "WARN: no session summary yet (start/stop agent once): $_" -ForegroundColor Yellow
 }
 
+Write-Host "==> M8 validation / futures / notify" -ForegroundColor Cyan
+$validation = Invoke-RestMethod -Uri "$Api/validation/status" -TimeoutSec 10
+Assert-Ok ($null -ne $validation.status) "validation status missing"
+Write-Host "validation: $($validation.status) · can_live=$($validation.can_enable_live)" -ForegroundColor Green
+
+$futures = Invoke-RestMethod -Uri "$Api/futures/status" -TimeoutSec 10
+Assert-Ok ($futures.enabled -eq $false) "expected futures stub disabled"
+Write-Host "futures stub: $($futures.message)" -ForegroundColor Green
+
+$notify = Invoke-RestMethod -Uri "$Api/notify/status" -TimeoutSec 10
+Write-Host "telegram configured: $($notify.telegram_configured)" -ForegroundColor Green
+
 if ($Live) {
     Write-Host "==> Live agent tick (requires Binance Demo + LLM in .env)" -ForegroundColor Cyan
     $tickBody = @{ thread_id = "e2e-live-$(Get-Date -Format 'yyyyMMddHHmmss')" } | ConvertTo-Json

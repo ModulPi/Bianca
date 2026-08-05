@@ -98,6 +98,18 @@ async def confirm_pending_signal(
     return {"status": state.get("status"), "state": state}
 
 
+async def confirm_pending_for_strategy(
+    strategy_id: str,
+    *,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    repo = PendingSignalRepository()
+    row = await repo.get_latest_pending_for_strategy(strategy_id)
+    if row is None:
+        raise ValueError("该策略无待确认信号")
+    return await confirm_pending_signal(row.id, settings=settings)
+
+
 async def reject_pending_signal(pending_id: str) -> dict[str, str]:
     repo = PendingSignalRepository()
     row = await repo.get_by_id(pending_id)

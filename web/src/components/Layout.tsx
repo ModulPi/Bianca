@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const links = [
   { to: "/", label: "仪表盘" },
+  { to: "/positions", label: "持仓" },
   { to: "/trades", label: "交易" },
   { to: "/sessions", label: "会话" },
   { to: "/strategies", label: "策略" },
@@ -38,7 +39,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <p className="mt-auto text-xs text-zinc-600">M8 · Web Console</p>
+        <p className="mt-auto text-xs text-zinc-600">M7 · Web Console</p>
       </aside>
       <main className="flex-1 p-6 overflow-auto">
         <Outlet />

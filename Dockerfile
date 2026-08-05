@@ -9,7 +9,9 @@ COPY pyproject.toml README.md start_poc.py run_poc_closure.py ./
 COPY agent ./agent
 COPY tests ./tests
 
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
 EXPOSE 8000

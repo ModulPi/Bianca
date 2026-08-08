@@ -5,9 +5,8 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-COPY pyproject.toml README.md start_poc.py run_poc_closure.py ./
+COPY pyproject.toml README.md ./
 COPY agent ./agent
-COPY tests ./tests
 
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && \
     rm -rf /var/lib/apt/lists/* && \

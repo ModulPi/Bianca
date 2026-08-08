@@ -1,5 +1,5 @@
 # M4 基础设施：PostgreSQL(TimescaleDB) + Redis
-# 用法: docker compose -f docker-compose.yml -f docker-compose.m4.yml up -d --build
+# 用法: docker compose -f docker-compose.yml -f deploy/compose/m4.yml up -d --build
 
 services:
   postgres:

@@ -5,7 +5,9 @@ import type {
   CheckpointThreadListResponse,
   ConfirmPendingResponse,
   DecisionListResponse,
+  DashboardSnapshot,
   HealthResponse,
+  KlineListResponse,
   MessageResponse,
   PositionListResponse,
   FuturesStatusResponse,
@@ -62,6 +64,12 @@ export const api = {
   agentStatus: () => request<AgentStatus>("/agent/status"),
   agentStart: () => request<MessageResponse>("/agent/start", { method: "POST" }),
   agentStop: () => request<MessageResponse>("/agent/stop", { method: "POST" }),
+  agentRecover: () => request<MessageResponse>("/agent/recover", { method: "POST" }),
+
+  marketKlines: (symbol: string, interval: string, limit = 120) =>
+    request<KlineListResponse>(
+      `/market/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`,
+    ),
 
   summaryCurrent: () => request<SessionSummary>("/summary/session/current"),
   summaryLatest: () => request<SessionSummary>("/summary/session/latest"),
@@ -135,9 +143,49 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),
+
+  exportSessionCsv: async (sessionId: string) => {
+    const res = await fetch(`${BASE}/summary/sessions/${encodeURIComponent(sessionId)}/export.csv`);
+    if (!res.ok) {
+      throw new ApiError(res.status, res.statusText);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `session-${sessionId.slice(0, 8)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 export { ApiError };
+
+export type SnapshotFetchResult =
+  | { kind: "updated"; data: DashboardSnapshot; etag: string | null }
+  | { kind: "not_modified" };
+
+export async function fetchDashboardSnapshot(etag: string | null): Promise<SnapshotFetchResult> {
+  const headers: Record<string, string> = {};
+  if (etag) headers["If-None-Match"] = etag;
+
+  const res = await fetch(`${BASE}/dashboard/snapshot`, { headers });
+  if (res.status === 304) {
+    return { kind: "not_modified" };
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      detail = body.detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const data = (await res.json()) as DashboardSnapshot;
+  return { kind: "updated", data, etag: res.headers.get("ETag") };
+}
 
 export async function fetchDashboardSummary(
   running: boolean,

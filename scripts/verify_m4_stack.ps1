@@ -5,11 +5,11 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
-$composeFiles = @("-f", "docker-compose.yml", "-f", "docker-compose.m4.yml")
+$composeFiles = @("-f", "docker-compose.yml", "-f", "deploy/compose/m4.yml")
 $tsImage = docker images --format "{{.Repository}}:{{.Tag}}" | Select-String -Pattern "^timescale/timescaledb:latest-pg16$" -Quiet
 if (-not $tsImage) {
     Write-Host "WARN: timescale/timescaledb:latest-pg16 not found, using postgres:16-alpine fallback" -ForegroundColor Yellow
-    $composeFiles += @("-f", "docker-compose.m4.verify.yml")
+    $composeFiles += @("-f", "deploy/compose/m4.verify.yml")
 }
 
 Write-Host "==> Build and start M4 stack (PG + Redis + API + Web)" -ForegroundColor Cyan
@@ -73,9 +73,9 @@ docker compose @composeFiles exec -T postgres psql -U bianca -d bianca -c $seedS
 
 Write-Host "==> Web console" -ForegroundColor Cyan
 try {
-    $web = Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing -TimeoutSec 10
+    $web = Invoke-WebRequest -Uri "http://127.0.0.1:3001/" -UseBasicParsing -TimeoutSec 10
     if ($web.StatusCode -ne 200) { throw "web status $($web.StatusCode)" }
-    Write-Host "Web OK: http://127.0.0.1:3000/" -ForegroundColor Green
+    Write-Host "Web OK: http://127.0.0.1:3001/" -ForegroundColor Green
 } catch {
     Write-Host "WARN: Web not responding: $_" -ForegroundColor Yellow
 }

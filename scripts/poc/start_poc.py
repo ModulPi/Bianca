@@ -2,8 +2,8 @@
 """Bianca PoC 一键启动：起服务 → 等健康 → 启动 Agent 循环 → 前台保持。
 
 用法：
-    python start_poc.py          # 正常启动（前台保持）
-    python start_poc.py --once   # 启动、验证一次闭环后退出（不进入前台）
+    python scripts/poc/start_poc.py          # 正常启动（前台保持）
+    python scripts/poc/start_poc.py --once   # 启动、验证一次闭环后退出
 
 退出：Ctrl+C 会停止服务并（尝试）停止 Agent runner。
 """
@@ -19,22 +19,20 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-os.chdir(ROOT)  # 确保 .env / data 相对路径正确
+ROOT = Path(__file__).resolve().parents[2]
+os.chdir(ROOT)
 
-# Windows 控制台默认 GBK，强制 UTF-8 输出避免乱码/崩溃（字符集不支持时用替换符兜底）
 for stream in (sys.stdout, sys.stderr):
     try:
         stream.reconfigure(encoding="utf-8", errors="replace")
     except AttributeError:
         pass
 
-HEALTH_TIMEOUT = 60  # 秒
-HEALTH_INTERVAL = 2  # 秒
+HEALTH_TIMEOUT = 60
+HEALTH_INTERVAL = 2
 
 
 def load_env() -> dict[str, str]:
-    """读取 .env（简易解析，覆盖 pydantic-settings 所需的键）。"""
     env: dict[str, str] = {}
     env_file = ROOT / ".env"
     if not env_file.exists():

@@ -1,3 +1,11 @@
+export interface WorkerStatus {
+  symbol: string;
+  last_tick: string | null;
+  last_status: string | null;
+  last_error: string | null;
+  tick_count: number;
+}
+
 export interface AgentStatus {
   running: boolean;
   last_tick: string | null;
@@ -10,6 +18,10 @@ export interface AgentStatus {
   session_id: string | null;
   session_started_at: string | null;
   execution_mode?: string;
+  trade_market?: string;
+  symbols?: string[];
+  workers?: WorkerStatus[];
+  degraded?: boolean;
 }
 
 export interface SessionAgentInfo {
@@ -43,11 +55,27 @@ export interface SessionPnLInfo {
   daily_pnl_legacy: number;
 }
 
+export interface SessionPositionItem {
+  symbol: string;
+  base: string;
+  free: number;
+  used: number;
+  mark_price: number | null;
+  notional_quote: number | null;
+  market: string;
+  quote_currency: string;
+  available: boolean;
+}
+
 export interface SessionPositionsInfo {
   base_asset: string;
   base_free: number;
   usdt_free: number;
   mark_price: number | null;
+  market?: string;
+  quote_currency?: string;
+  cash_free?: number | null;
+  items?: SessionPositionItem[];
 }
 
 export interface SessionSummary {
@@ -110,6 +138,7 @@ export interface HealthResponse {
   redis_detail?: string | null;
   checkpointer_backend?: string;
   binance_demo: string;
+  binance_live?: string | null;
   binance_detail?: string | null;
   llm_provider: string;
   llm: string;
@@ -132,6 +161,67 @@ export interface TickerResponse {
   bid: number | null;
   ask: number | null;
   timestamp: number | null;
+  change_24h?: number | null;
+  change_24h_pct?: number | null;
+  high_24h?: number | null;
+  low_24h?: number | null;
+  volume_24h?: number | null;
+}
+
+export interface DashboardPosition {
+  symbol: string;
+  base: string;
+  free: number;
+  used: number;
+  mark: number | null;
+  notional_usdt: number | null;
+  market: string;
+  quote_currency: string;
+  available: boolean;
+}
+
+export interface WorkerTokenUsage {
+  symbol: string;
+  llm_calls: number;
+  total_tokens: number;
+}
+
+export interface DashboardSnapshot {
+  agent: AgentStatus;
+  trading_mode: TradingModeResponse;
+  validation: ValidationStatus;
+  health: HealthResponse;
+  usage: UsageSummary;
+  session: SessionSummary | null;
+  balance: BalanceResponse | null;
+  balance_error: string | null;
+  positions: DashboardPosition[];
+  tickers: TickerResponse[];
+  tickers_error: string | null;
+  open_trades: TradeLogItem[];
+  recent_filled: TradeLogItem[];
+  chart_trades: TradeLogItem[];
+  pending_signals: PendingSignalItem[];
+  risk_events: RiskEventItem[];
+  worker_token_usage: WorkerTokenUsage[];
+  generated_at: string;
+}
+
+export interface KlineItem {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface KlineListResponse {
+  items: KlineItem[];
+  total: number;
+  symbol: string;
+  interval: string;
+  source: string;
 }
 
 export interface DecisionLogItem {

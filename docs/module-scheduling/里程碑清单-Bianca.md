@@ -134,7 +134,7 @@
 
 ## 验收检查表（M4 双栈）
 
-- [x] `docker compose -f docker-compose.yml -f docker-compose.m4.yml up` 启动 PG + Redis + API + Web
+- [x] `docker compose -f docker-compose.yml -f deploy/compose/m4.yml up` 启动 PG + Redis + API + Web
 - [x] `GET /api/v1/health` → `database_backend=postgresql`、`schema_mode=mvp`、`checkpointer_backend=postgresql`
 - [x] PG 11 张业务表 + 默认策略种子
 - [x] TimescaleDB 正式镜像（`timescale/timescaledb:latest-pg16`）
@@ -148,7 +148,7 @@
 ## M4 快速命令
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.m4.yml up -d --build
+docker compose -f docker-compose.yml -f deploy/compose/m4.yml up -d --build
 powershell -ExecutionPolicy Bypass -File .\scripts\verify_m4_stack.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\verify_m4_e2e.ps1
 

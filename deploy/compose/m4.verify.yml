@@ -1,5 +1,5 @@
 # M4 验证降级：TimescaleDB 镜像不可用时改用 postgres:16-alpine
-# 用法: docker compose -f docker-compose.yml -f docker-compose.m4.yml -f docker-compose.m4.verify.yml up -d --build
+# 用法: docker compose -f docker-compose.yml -f deploy/compose/m4.yml -f deploy/compose/m4.verify.yml up -d --build
 
 services:
   postgres:

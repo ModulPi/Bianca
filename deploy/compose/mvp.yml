@@ -1,0 +1,30 @@
+# MVP 监控栈：Prometheus + Grafana（可选 profile）
+# 用法: docker compose --profile mvp -f docker-compose.yml -f deploy/compose/m4.yml -f deploy/compose/mvp.yml up -d
+
+services:
+  prometheus:
+    profiles: ["mvp"]
+    image: prom/prometheus:v2.54.1
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ../prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["mvp"]
+    image: grafana/grafana:11.2.0
+    ports:
+      - "127.0.0.1:9091:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: bianca
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped

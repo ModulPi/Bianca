@@ -1,3 +1,4 @@
+# Bianca 基础栈：API + Web（PoC 默认 SQLite，见 deploy/compose/ 叠加 PG/Redis）
 services:
   api:
     build: .
@@ -14,38 +15,7 @@ services:
   web:
     build: ./web
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3001:80"
     depends_on:
       - api
     restart: unless-stopped
-
-  postgres:
-    profiles: ["mvp"]
-    image: timescale/timescaledb:latest-pg16
-    environment:
-      POSTGRES_USER: bianca
-      POSTGRES_PASSWORD: bianca
-      POSTGRES_DB: bianca
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bianca -d bianca"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
-  redis:
-    profiles: ["mvp"]
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-volumes:
-  pgdata:

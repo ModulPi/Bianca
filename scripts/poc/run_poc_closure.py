@@ -2,8 +2,8 @@
 """等待 PoC 最小买卖闭环：至少 1 笔 BUY filled + 1 笔 SELL filled。
 
 用法：
-    python run_poc_closure.py
-    python run_poc_closure.py --base http://127.0.0.1:8000 --timeout 900
+    python scripts/poc/run_poc_closure.py
+    python scripts/poc/run_poc_closure.py --base http://127.0.0.1:8000 --timeout 900
 """
 from __future__ import annotations
 

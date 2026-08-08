@@ -121,7 +121,7 @@ if (-not $binanceOk) {
     Write-Host "2. Re-run: powershell -File .\scripts\demo_acceptance.ps1"
 }
 if ($binanceOk -and $llmOk) {
-    Write-Host "Run closure: D:\Python311\python.exe run_poc_closure.py"
+    Write-Host "Run closure: python scripts/poc/run_poc_closure.py"
     Write-Host "Or: powershell -File .\scripts\demo_acceptance.ps1 -StartAgent"
 }
 Write-Host ""

@@ -1,7 +1,9 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { getApiToken, setApiToken } from "../api/token";
 
 const links = [
   { to: "/", label: "运维看板" },
+  { to: "/chat", label: "聊天指挥" },
   { to: "/positions", label: "持仓" },
   { to: "/trades", label: "交易" },
   { to: "/sessions", label: "会话" },
@@ -14,6 +16,14 @@ const links = [
 ];
 
 export default function Layout() {
+  const navigate = useNavigate();
+  const hasToken = Boolean(getApiToken());
+
+  function logout() {
+    setApiToken("");
+    navigate("/login", { replace: true });
+  }
+
   return (
     <div className="min-h-screen flex">
       <aside className="w-56 shrink-0 border-r border-zinc-800 bg-zinc-900/50 p-4 flex flex-col gap-6">
@@ -39,7 +49,16 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <p className="mt-auto text-xs text-zinc-600">Agent Console · M7</p>
+        {hasToken ? (
+          <button
+            type="button"
+            onClick={logout}
+            className="text-xs text-zinc-500 hover:text-zinc-300 text-left"
+          >
+            退出登录
+          </button>
+        ) : null}
+        <p className="mt-auto text-xs text-zinc-600">Agent Console · M9</p>
       </aside>
       <main className="flex-1 p-6 overflow-auto">
         <Outlet />

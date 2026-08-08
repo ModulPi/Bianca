@@ -21,6 +21,13 @@ def _serialize_state(values: dict[str, Any] | None) -> dict[str, Any]:
         "risk_decision",
         "order_result",
         "market_data",
+        "orchestrator_plan",
+        "agent_signals",
+        "merge_meta",
+        "analysis_signal",
+        "strategy_signal",
+        "chat_directives",
+        "symbol",
     )
     out: dict[str, Any] = {}
     for key in keys:

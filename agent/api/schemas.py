@@ -33,6 +33,10 @@ class WorkerStatusItem(BaseModel):
     last_status: str | None = None
     last_error: str | None = None
     tick_count: int = 0
+    last_agents: list[str] = []
+    last_merge_action: str | None = None
+    merge_conflict: bool = False
+    merge_reason: str | None = None
 
 
 class AgentStatusResponse(BaseModel):

@@ -1,9 +1,12 @@
 import { useEffect } from "react";
 import { useSearchParams, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
+import RequireAuth from "./components/RequireAuth";
+import ChatPage from "./pages/ChatPage";
 import CheckpointsPage from "./pages/CheckpointsPage";
 import DashboardPage from "./pages/DashboardPage";
 import DecisionsPage from "./pages/DecisionsPage";
+import LoginPage from "./pages/LoginPage";
 import PositionsPage from "./pages/PositionsPage";
 import RiskPage from "./pages/RiskPage";
 import SessionDetailPage from "./pages/SessionDetailPage";
@@ -16,19 +19,23 @@ import ValidationPage from "./pages/ValidationPage";
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<DashboardPage />} />
-        <Route path="trades" element={<TradesPage />} />
-        <Route path="positions" element={<PositionsPage />} />
-        <Route path="sessions" element={<SessionsPage />} />
-        <Route path="sessions/:id" element={<SessionDetailPage />} />
-        <Route path="strategies" element={<StrategiesPage />} />
-        <Route path="usage" element={<UsagePage />} />
-        <Route path="decisions" element={<DecisionsPage />} />
-        <Route path="risk" element={<RiskPage />} />
-        <Route path="checkpoints" element={<CheckpointsPageWithQuery />} />
-        <Route path="validation" element={<ValidationPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<Layout />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="chat" element={<ChatPage />} />
+          <Route path="trades" element={<TradesPage />} />
+          <Route path="positions" element={<PositionsPage />} />
+          <Route path="sessions" element={<SessionsPage />} />
+          <Route path="sessions/:id" element={<SessionDetailPage />} />
+          <Route path="strategies" element={<StrategiesPage />} />
+          <Route path="usage" element={<UsagePage />} />
+          <Route path="decisions" element={<DecisionsPage />} />
+          <Route path="risk" element={<RiskPage />} />
+          <Route path="checkpoints" element={<CheckpointsPageWithQuery />} />
+          <Route path="validation" element={<ValidationPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
       </Route>
     </Routes>
   );

@@ -100,6 +100,10 @@ async def build_agent_status() -> AgentStatusResponse:
             last_status=w.last_status,
             last_error=w.last_error,
             tick_count=w.tick_count,
+            last_agents=w.last_agents,
+            last_merge_action=w.last_merge_action,
+            merge_conflict=w.merge_conflict,
+            merge_reason=w.merge_reason,
         )
         for w in snap.workers.values()
     ]

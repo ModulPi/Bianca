@@ -16,3 +16,11 @@ class TradeState(TypedDict, total=False):
     session_id: str | None
     status: str
     message: str
+    symbol: str
+    execution_mode: str
+    orchestrator_plan: dict
+    agent_signals: list[dict]
+    merge_meta: dict
+    chat_directives: list[dict]
+    analysis_signal: dict | None
+    strategy_signal: dict | None

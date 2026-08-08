@@ -23,6 +23,10 @@ class WorkerSnapshot:
     last_status: str | None = None
     last_error: str | None = None
     tick_count: int = 0
+    last_agents: list[str] = field(default_factory=list)
+    last_merge_action: str | None = None
+    merge_conflict: bool = False
+    merge_reason: str | None = None
 
 
 @dataclass
@@ -206,6 +210,13 @@ class AgentRunner:
             )
             now = datetime.now(UTC).isoformat()
             status = result.get("status")
+            merge_meta = result.get("merge_meta") or {}
+            agent_signals = result.get("agent_signals") or []
+            worker.last_agents = [s.get("agent", "?") for s in agent_signals if s.get("agent")]
+            llm_sig = result.get("llm_signal") or {}
+            worker.last_merge_action = llm_sig.get("action")
+            worker.merge_conflict = bool(merge_meta.get("conflict"))
+            worker.merge_reason = merge_meta.get("reason")
             worker.last_tick = now
             worker.last_status = status
             worker.last_error = None

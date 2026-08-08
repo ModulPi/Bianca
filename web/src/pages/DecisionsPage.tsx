@@ -9,7 +9,7 @@ export default function DecisionsPage() {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">决策回放</h1>
-        <p className="text-sm text-zinc-500">LLM 决策日志 · decision_logs</p>
+        <p className="text-sm text-zinc-500">AI 决策日志；多 Agent 协作详情见「回放」页</p>
       </header>
       {loading && !data ? <p className="text-sm text-zinc-500">加载中…</p> : null}
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}

@@ -46,6 +46,8 @@ export default function WorkerStatusPanel({
             <thead>
               <tr className="border-b border-zinc-800 text-zinc-500">
                 <th className="py-2 pr-3">Symbol</th>
+                <th className="py-2 pr-3">参与</th>
+                <th className="py-2 pr-3">最终决定</th>
                 <th className="py-2 pr-3">Ticks</th>
                 <th className="py-2 pr-3">状态</th>
                 <th className="py-2 pr-3">最近 tick</th>
@@ -63,6 +65,14 @@ export default function WorkerStatusPanel({
                     className={`border-b border-zinc-800/50 ${rowClass[tone]}`}
                   >
                     <td className="py-2 pr-3 mono text-amber-300">{w.symbol}</td>
+                    <td className="py-2 pr-3 text-zinc-400">
+                      {(w.last_agents ?? []).join(" + ") || "—"}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span className={w.merge_conflict ? "text-amber-400" : "text-zinc-300"}>
+                        {w.last_merge_action ?? w.last_status ?? "—"}
+                      </span>
+                    </td>
                     <td className="py-2 pr-3">{w.tick_count ?? 0}</td>
                     <td className="py-2 pr-3 text-zinc-300">{w.last_status ?? "—"}</td>
                     <td className="py-2 pr-3 mono text-zinc-500 whitespace-nowrap">

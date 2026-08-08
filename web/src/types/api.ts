@@ -4,6 +4,10 @@ export interface WorkerStatus {
   last_status: string | null;
   last_error: string | null;
   tick_count: number;
+  last_agents?: string[];
+  last_merge_action?: string | null;
+  merge_conflict?: boolean;
+  merge_reason?: string | null;
 }
 
 export interface AgentStatus {
@@ -137,6 +141,7 @@ export interface HealthResponse {
   redis?: string;
   redis_detail?: string | null;
   checkpointer_backend?: string;
+  api_auth_enabled?: boolean;
   binance_demo: string;
   binance_live?: string | null;
   binance_detail?: string | null;
@@ -153,6 +158,20 @@ export interface BalanceResponse {
 
 export interface MessageResponse {
   message: string;
+}
+
+export interface ChatMessageItem {
+  role: string;
+  content: string;
+  intent?: string | null;
+}
+
+export interface ChatResponse {
+  intent: string;
+  symbol?: string | null;
+  reply: string;
+  actions?: { action: string; symbol?: string | null; style?: string | null }[];
+  messages: ChatMessageItem[];
 }
 
 export interface TickerResponse {

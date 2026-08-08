@@ -1,6 +1,8 @@
 import type {
   AgentStatus,
   BalanceResponse,
+  ChatResponse,
+  ChatMessageItem,
   CheckpointHistoryResponse,
   CheckpointThreadListResponse,
   ConfirmPendingResponse,
@@ -26,6 +28,8 @@ import type {
   ValidationStatus,
 } from "../types/api";
 
+import { authHeaders, getApiToken, setApiToken } from "../api/token";
+
 const BASE = "/api/v1";
 
 class ApiError extends Error {
@@ -39,7 +43,7 @@ class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...init?.headers },
     ...init,
   });
   if (!res.ok) {
@@ -65,6 +69,13 @@ export const api = {
   agentStart: () => request<MessageResponse>("/agent/start", { method: "POST" }),
   agentStop: () => request<MessageResponse>("/agent/stop", { method: "POST" }),
   agentRecover: () => request<MessageResponse>("/agent/recover", { method: "POST" }),
+
+  chatSend: (message: string, sessionId?: string) =>
+    request<ChatResponse>("/agent/chat", {
+      method: "POST",
+      body: JSON.stringify({ message, session_id: sessionId ?? null }),
+    }),
+  chatHistory: () => request<ChatResponse>("/agent/chat/history"),
 
   marketKlines: (symbol: string, interval: string, limit = 120) =>
     request<KlineListResponse>(
@@ -166,7 +177,7 @@ export type SnapshotFetchResult =
   | { kind: "not_modified" };
 
 export async function fetchDashboardSnapshot(etag: string | null): Promise<SnapshotFetchResult> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...authHeaders() };
   if (etag) headers["If-None-Match"] = etag;
 
   const res = await fetch(`${BASE}/dashboard/snapshot`, { headers });

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from agent.config import Settings, clear_settings_cache, set_effective_settings
 from agent.confirmation.service import expire_pending_signals, queue_pending_signal
-from agent.graph.supervisor import route_after_analysis
+from agent.graph.supervisor import route_after_merge
 from agent.storage.database import close_db, init_db
 from agent.storage.repository import PendingSignalRepository
 
@@ -16,11 +16,11 @@ async def _db():
     await close_db()
 
 
-def test_route_after_analysis_semi_auto():
+def test_route_after_merge_semi_auto():
     clear_settings_cache()
     set_effective_settings(Settings(execution_mode="semi_auto", llm_auto_execute=True))
     try:
-        result = route_after_analysis(
+        result = route_after_merge(
             {"llm_signal": {"action": "BUY", "amount": 10, "confidence": 0.9}, "llm_auto_execute": True}
         )
         assert result == "queue_pending"

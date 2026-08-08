@@ -10,9 +10,12 @@ from agent.config import Settings, get_settings
 from agent.degradation import get_effective_execution_mode
 from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_agent
 from agent.graph.execute_agent import run_execute_agent
+from agent.graph.merge_signals import merge_signals
+from agent.graph.orchestrator import orchestrator_node
 from agent.graph.pending_agent import run_pending_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
+from agent.graph.strategy_agent import strategy_node
 from agent.markets.registry import get_market_adapter
 from agent.storage.repository import TradeRepository
 
@@ -41,10 +44,50 @@ async def fetch_market_node(state: TradeState) -> TradeState:
 
 
 async def analysis_node(state: TradeState) -> TradeState:
+    plan = state.get("orchestrator_plan") or {}
+    if not plan.get("use_analysis"):
+        return state
+
+    if plan.get("skip_tick"):
+        return state
+
     settings = get_settings()
     market_data = state.get("market_data") or {}
     result = await run_analysis_agent(market_data, settings=settings, persist=True)
-    return apply_analysis_to_state(state, result)
+    updated = apply_analysis_to_state(state, result)
+    entry = {
+        "agent": "analysis",
+        "signal": result.signal.to_dict(),
+        "decision_id": result.decision_id,
+        "raw_reason": result.raw_output or result.signal.reason,
+    }
+    signals = list(state.get("agent_signals") or [])
+    signals.append(entry)
+    return {
+        **updated,
+        "agent_signals": signals,
+        "analysis_signal": result.signal.to_dict(),
+    }
+
+
+async def merge_node(state: TradeState) -> TradeState:
+    plan = state.get("orchestrator_plan") or {}
+    if plan.get("skip_tick"):
+        return {**state, "status": "skipped", "message": plan.get("skip_reason", "skipped")}
+
+    settings = get_settings()
+    signals = state.get("agent_signals") or []
+    if not signals:
+        hold = {"action": "HOLD", "symbol": state.get("symbol"), "confidence": 0.0, "reason": "无 Agent 信号"}
+        return {**state, "llm_signal": hold, "merge_meta": {"mode": settings.signal_merge_mode, "reason": "empty"}}
+
+    merged, meta = merge_signals(signals, mode=settings.signal_merge_mode)
+    prefix = f"[merge:{meta.get('mode')}] "
+    if meta.get("conflict"):
+        prefix += "[conflict] "
+    merged["reason"] = prefix + str(merged.get("merge_reason") or meta.get("reason", ""))
+
+    return {**state, "llm_signal": merged, "merge_meta": meta}
 
 
 async def log_signal_only_node(state: TradeState) -> TradeState:
@@ -71,7 +114,9 @@ async def log_signal_only_node(state: TradeState) -> TradeState:
     }
 
 
-def route_after_analysis(state: TradeState) -> Literal["risk", "queue_pending", "log_only"]:
+def route_after_merge(state: TradeState) -> Literal["risk", "queue_pending", "log_only", "end"]:
+    if state.get("status") == "skipped":
+        return "end"
     signal = state.get("llm_signal") or {}
     if signal.get("action") == "HOLD":
         return "log_only"
@@ -95,18 +140,24 @@ def route_after_risk(state: TradeState) -> Literal["execute"] | type(END):
 def build_trade_graph() -> StateGraph:
     graph = StateGraph(TradeState)
     graph.add_node("fetch_market", fetch_market_node)
+    graph.add_node("orchestrator", orchestrator_node)
     graph.add_node("analysis", analysis_node)
+    graph.add_node("strategy", strategy_node)
+    graph.add_node("merge", merge_node)
     graph.add_node("log_only", log_signal_only_node)
     graph.add_node("queue_pending", run_pending_agent)
     graph.add_node("risk", run_risk_agent)
     graph.add_node("execute", run_execute_agent)
 
     graph.add_edge(START, "fetch_market")
-    graph.add_edge("fetch_market", "analysis")
+    graph.add_edge("fetch_market", "orchestrator")
+    graph.add_edge("orchestrator", "analysis")
+    graph.add_edge("analysis", "strategy")
+    graph.add_edge("strategy", "merge")
     graph.add_conditional_edges(
-        "analysis",
-        route_after_analysis,
-        {"risk": "risk", "queue_pending": "queue_pending", "log_only": "log_only"},
+        "merge",
+        route_after_merge,
+        {"risk": "risk", "queue_pending": "queue_pending", "log_only": "log_only", "end": END},
     )
     graph.add_edge("log_only", END)
     graph.add_edge("queue_pending", END)
@@ -123,7 +174,7 @@ async def run_agent_tick(
     symbol: str | None = None,
     settings: Settings | None = None,
 ) -> TradeState:
-    """Run one full Supervisor → Analysis → Risk → Execute cycle."""
+    """Run one full multi-agent tick: Orchestrator → Analysis + Strategy → Merge → Risk → Execute."""
     cfg = settings or get_settings()
     sym = (symbol or cfg.trade_symbol).upper()
     effective_mode = await get_effective_execution_mode(cfg)

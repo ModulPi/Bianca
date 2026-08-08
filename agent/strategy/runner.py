@@ -69,7 +69,10 @@ def get_strategy_runner() -> StrategyRunner:
 
 
 async def resume_strategy_runner_if_needed() -> None:
-    """API 重启后恢复 tick 循环（DB 中 status=running 的策略）。"""
+    """API 重启后恢复 tick 循环（仅当 STRATEGY_RUNNER_AUTO_START=true）。"""
+    settings = get_settings()
+    if not settings.strategy_runner_auto_start:
+        return
     running = await StrategyRepository().list_running()
     if running:
         await get_strategy_runner().start()

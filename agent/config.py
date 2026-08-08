@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     auto_degrade_enabled: bool = True
     auto_degrade_failures: int = Field(default=3, ge=1)
     agent_stop_on_loop_closed: bool = False
+    # M9 — 多 Agent 信号合并：llm_primary | strategy_primary | consensus | min_confidence
+    signal_merge_mode: Literal["llm_primary", "strategy_primary", "consensus", "min_confidence"] = (
+        "llm_primary"
+    )
+    strategy_runner_auto_start: bool = False
     # K 线采集（仅 PostgreSQL schema_mode=mvp 时写入）
     kline_collector_enabled: bool = True
     kline_interval: str = "1m"
@@ -118,6 +123,7 @@ class Settings(BaseSettings):
         "live_trading_confirmed",
         "auto_degrade_enabled",
         "agent_stop_on_loop_closed",
+        "strategy_runner_auto_start",
         mode="before",
     )
     @classmethod

@@ -115,6 +115,21 @@
 
 ---
 
+## M9 里程碑（多 Agent 协作）
+
+| 子项 | 状态 | 说明 |
+|------|------|------|
+| M9.1 趋势策略 Tool + Strategy 节点 | ✅ | `agent/graph/strategy_tools.py`、`strategy_agent.py` |
+| M9.2 Merge 节点 + llm_primary | ✅ | `agent/graph/merge_signals.py` |
+| M9.3 Orchestrator + 协作图 | ✅ | `supervisor.py` 扩展拓扑 |
+| M9.4 停默认 StrategyRunner | ✅ | `STRATEGY_RUNNER_AUTO_START=false` |
+| M9.5 看板详情 + 回放 UI | ✅ | Worker 列、CheckpointTimeline 三栏 |
+| M9.6 聊天 API + Command Agent | ✅ | `POST /api/v1/agent/chat` |
+| M9.7 前端登录 | ✅ | `LoginPage` + `API_TOKEN` |
+| M9.8 集成测试 | ✅ | `test_multi_agent_collaboration*.py` |
+
+---
+
 ## 待完成编码任务（按优先级）
 
 ### P1 — MVP 生产化

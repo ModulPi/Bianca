@@ -15,14 +15,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.checkpoint.store import checkpointer_backend, list_checkpoint_threads
-from agent.config import clear_settings_cache
-from agent.llm.schemas import AnalysisResult, TradeSignal
-from agent.main import app
-from agent.positions.sync import sync_positions_from_balance
-from agent.storage.constants import DEFAULT_AGENT_STRATEGY_ID
-from agent.storage.database import close_db, init_db, is_postgres_url, schema_mode
-from agent.storage.repository import PositionRepository, StrategyRepository
+from backend.infrastructure.checkpoint.store import checkpointer_backend, list_checkpoint_threads
+from backend.config import clear_settings_cache
+from backend.domain.llm.schemas import AnalysisResult, TradeSignal
+from backend.main import app
+from backend.domain.positions.sync import sync_positions_from_balance
+from backend.infrastructure.storage.constants import DEFAULT_AGENT_STRATEGY_ID
+from backend.infrastructure.storage.database import close_db, init_db, is_postgres_url, schema_mode
+from backend.infrastructure.storage.repository import PositionRepository, StrategyRepository
 
 pytestmark = pytest.mark.pg
 
@@ -105,7 +105,7 @@ async def test_pg_strategy_tick_hold(pg_client):
         "last": 65000.0,
         "balance": {"free": {"USDT": 1000.0, "BTC": 0.0}},
     }
-    with patch("agent.strategy.engine.fetch_market", AsyncMock(return_value=market)):
+    with patch("backend.domain.strategy.engine.fetch_market", AsyncMock(return_value=market)):
         tick = await pg_client.post(f"/api/v1/strategies/{sid}/tick")
     assert tick.status_code == 200
     assert tick.json()["status"] == "hold"
@@ -130,7 +130,7 @@ async def test_pg_checkpoint_after_agent_tick(pg_client):
         "balance": {"free": {"USDT": 1000.0, "BTC": 0.0}},
     }
 
-    with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_result)):
+    with patch("backend.application.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_result)):
         resp = await pg_client.post(
             "/api/v1/agent/tick",
             json={"thread_id": thread_id, "market_data": {"last": 65000.0}},
@@ -148,7 +148,7 @@ async def test_pg_checkpoint_after_agent_tick(pg_client):
 
 @pytest.mark.asyncio
 async def test_pg_pending_signal_confirm(pg_client):
-    from agent.storage.repository import PendingSignalRepository
+    from backend.infrastructure.storage.repository import PendingSignalRepository
 
     repo = PendingSignalRepository()
     signal = {"action": "BUY", "symbol": "BTCUSDT", "amount": 10.0, "confidence": 0.9, "reason": "pg"}
@@ -172,9 +172,9 @@ async def test_pg_pending_signal_confirm(pg_client):
         "trade_log_id": "trade-pg-1",
         "order_result": {"id": "ord-pg-1"},
     }
-    with patch("agent.confirmation.service.run_risk_agent", AsyncMock(return_value=approved)):
+    with patch("backend.application.confirmation.service.run_risk_agent", AsyncMock(return_value=approved)):
         with patch(
-            "agent.confirmation.service.run_execute_agent",
+            "backend.application.confirmation.service.run_execute_agent",
             AsyncMock(return_value={**approved, "status": "filled"}),
         ):
             resp = await pg_client.post(f"/api/v1/pending-signals/{row.id}/confirm")
@@ -189,7 +189,7 @@ async def test_pg_pending_signal_confirm(pg_client):
 async def test_pg_session_summary_api(pg_client):
     import uuid
 
-    from agent.storage.repository import SessionSummaryRepository
+    from backend.infrastructure.storage.repository import SessionSummaryRepository
 
     session_id = str(uuid.uuid4())
     summary_repo = SessionSummaryRepository()
@@ -214,8 +214,8 @@ async def test_pg_session_summary_api(pg_client):
 async def test_pg_klines_insert(pg_client):
     from datetime import UTC, datetime, timedelta
 
-    from agent.market.kline_collector import KlineBar
-    from agent.storage.repository import KlineRepository
+    from backend.infrastructure.market.kline_collector import KlineBar
+    from backend.infrastructure.storage.repository import KlineRepository
 
     now = datetime.now(UTC).replace(second=0, microsecond=0)
     bars = [
@@ -240,10 +240,10 @@ async def test_pg_klines_insert(pg_client):
 
 @pytest.mark.asyncio
 async def test_pg_risk_rejection_writes_event(pg_client, monkeypatch):
-    from agent.storage.repository import PendingSignalRepository, RiskEventRepository
+    from backend.infrastructure.storage.repository import PendingSignalRepository, RiskEventRepository
 
     monkeypatch.setenv("MAX_TRADE_AMOUNT", "5")
-    from agent.config import clear_settings_cache
+    from backend.config import clear_settings_cache
 
     clear_settings_cache()
 
@@ -282,7 +282,7 @@ async def test_pg_strategy_semi_auto_queues_pending(pg_client):
         "last": 65000.0,
         "balance": {"free": {"USDT": 1000.0, "BTC": 0.0}},
     }
-    with patch("agent.strategy.engine.fetch_market", AsyncMock(return_value=market)):
+    with patch("backend.domain.strategy.engine.fetch_market", AsyncMock(return_value=market)):
         tick = await pg_client.post(f"/api/v1/strategies/{sid}/tick")
     assert tick.status_code == 200
     assert tick.json()["status"] == "awaiting_confirmation"
@@ -295,8 +295,8 @@ async def test_pg_strategy_semi_auto_queues_pending(pg_client):
 
 @pytest.mark.asyncio
 async def test_pg_agent_stop_persists_summary(pg_client):
-    with patch("agent.runner.run_agent_tick", AsyncMock(return_value={"status": "hold"})):
-        with patch("agent.validation.paper_gate.assert_demo_mode_for_trading", AsyncMock()):
+    with patch("backend.application.runner.run_agent_tick", AsyncMock(return_value={"status": "hold"})):
+        with patch("backend.application.validation.paper_gate.assert_demo_mode_for_trading", AsyncMock()):
             start = await pg_client.post("/api/v1/agent/start")
     assert start.status_code == 200
 
@@ -317,7 +317,7 @@ async def test_pg_summary_includes_positions(pg_client):
         symbol="BTCUSDT",
         last_price=65000.0,
     )
-    from agent.summary.aggregator import build_session_summary
+    from backend.application.summary.aggregator import build_session_summary
 
     summary = await build_session_summary(
         session_id=str(uuid.uuid4()),
@@ -332,7 +332,7 @@ async def test_pg_summary_includes_positions(pg_client):
 
 @pytest.mark.asyncio
 async def test_pg_summary_sessions_and_daily(pg_client):
-    from agent.storage.repository import SessionSummaryRepository
+    from backend.infrastructure.storage.repository import SessionSummaryRepository
 
     session_id = str(uuid.uuid4())
     repo = SessionSummaryRepository()
@@ -378,8 +378,8 @@ async def test_pg_m8_validation_and_trading_mode(pg_client):
 
 @pytest.mark.asyncio
 async def test_pg_m8_validation_record_session(pg_client):
-    from agent.storage.repository import PaperValidationRepository
-    from agent.validation.paper_gate import record_session_for_validation
+    from backend.infrastructure.storage.repository import PaperValidationRepository
+    from backend.application.validation.paper_gate import record_session_for_validation
 
     await PaperValidationRepository().reset()
     summary = {
@@ -398,8 +398,8 @@ async def test_pg_m8_validation_record_session(pg_client):
         "pnl": {"realized_usdt": 1.0},
         "positions": {},
     }
-    with patch("agent.validation.paper_gate.get_settings") as mock_settings:
-        from agent.config import Settings
+    with patch("backend.application.validation.paper_gate.get_settings") as mock_settings:
+        from backend.config import Settings
 
         mock_settings.return_value = Settings(
             llm_api_key="pg-test",

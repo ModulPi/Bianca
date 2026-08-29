@@ -3,9 +3,9 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.main import app
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import DecisionRepository, TradeRepository
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import DecisionRepository, TradeRepository
 
 
 @pytest.fixture

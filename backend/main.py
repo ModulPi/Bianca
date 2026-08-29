@@ -1,0 +1,102 @@
+from contextlib import asynccontextmanager
+import asyncio
+import logging
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend import __version__
+from backend.interfaces.api.chat_routes import router as chat_router
+from backend.interfaces.api.dashboard_routes import router as dashboard_router
+from backend.interfaces.api.checkpoint_routes import router as checkpoint_router
+from backend.interfaces.api.market_routes import router as market_router
+from backend.interfaces.api.metrics_routes import router as metrics_router
+from backend.interfaces.api.pending_routes import router as pending_router
+from backend.interfaces.api.routes import router
+from backend.interfaces.api.strategy_routes import router as strategy_router
+from backend.interfaces.api.summary_routes import router as summary_router
+from backend.interfaces.api.validation_routes import (
+    futures_router,
+    notify_router,
+    router as validation_router,
+    trading_router,
+)
+from backend.interfaces.api.ws_routes import router as ws_router
+from backend.config import clear_settings_cache
+from backend.application.confirmation.service import expire_pending_signals
+from backend.infrastructure.market.kline_collector import run_kline_collector_loop
+from backend.application.runner import get_runner
+from backend.domain.strategy.runner import get_strategy_runner, resume_strategy_runner_if_needed
+from backend.infrastructure.cache.redis_client import close_redis, init_redis
+from backend.interfaces.security.auth import ApiTokenMiddleware
+from backend.interfaces.security.secrets_loader import refresh_effective_settings
+from backend.infrastructure.storage.database import close_db, init_db
+
+logger = logging.getLogger(__name__)
+
+
+async def _expire_pending_loop() -> None:
+    while True:
+        try:
+            await expire_pending_signals()
+        except Exception:  # noqa: BLE001
+            logger.exception("expire pending signals failed")
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    clear_settings_cache()
+    await init_db()
+    await refresh_effective_settings()
+    await init_redis()
+    await resume_strategy_runner_if_needed()
+    expire_task = asyncio.create_task(_expire_pending_loop())
+    kline_task = asyncio.create_task(run_kline_collector_loop())
+    yield
+    expire_task.cancel()
+    kline_task.cancel()
+    for task in (expire_task, kline_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    await get_runner().stop()
+    await get_strategy_runner().stop()
+    await close_redis()
+    await close_db()
+
+
+app = FastAPI(title="Bianca", version=__version__, lifespan=lifespan)
+app.add_middleware(ApiTokenMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:3001",
+        "http://localhost:3001",
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(router)
+app.include_router(chat_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(market_router, prefix="/api/v1")
+app.include_router(metrics_router)
+app.include_router(summary_router, prefix="/api/v1")
+app.include_router(checkpoint_router, prefix="/api/v1")
+app.include_router(pending_router, prefix="/api/v1")
+app.include_router(strategy_router, prefix="/api/v1")
+app.include_router(validation_router, prefix="/api/v1")
+app.include_router(notify_router, prefix="/api/v1")
+app.include_router(trading_router, prefix="/api/v1")
+app.include_router(futures_router, prefix="/api/v1")
+app.include_router(ws_router, prefix="/api/v1")
+
+
+@app.get("/")
+async def root():
+    return {"name": "Bianca", "version": __version__, "docs": "/docs"}

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from agent.config import Settings
-from agent.risk.rules import (
+from backend.config import Settings
+from backend.domain.risk.rules import (
     CircuitBreakerRule,
     DrawdownRule,
     InsufficientBalanceRule,

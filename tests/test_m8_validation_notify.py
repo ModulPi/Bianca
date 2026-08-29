@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.config import clear_settings_cache
-from agent.main import app
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import PaperValidationRepository
-from agent.validation.paper_gate import evaluate_validation, record_session_for_validation
+from backend.config import clear_settings_cache
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import PaperValidationRepository
+from backend.application.validation.paper_gate import evaluate_validation, record_session_for_validation
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ async def test_validation_passes_after_requirements():
     repo = PaperValidationRepository()
     await repo.reset()
     summary = _sample_summary(hours_span=25.0, loop_closed=True)
-    with patch("agent.validation.paper_gate.get_settings") as mock_settings:
+    with patch("backend.application.validation.paper_gate.get_settings") as mock_settings:
         mock_settings.return_value.paper_validation_min_hours = 24.0
         mock_settings.return_value.paper_validation_require_loop = True
         result = await record_session_for_validation(summary, settings=mock_settings.return_value)
@@ -91,7 +91,7 @@ async def test_futures_status_stub(client):
 
 @pytest.mark.asyncio
 async def test_telegram_send_mocked():
-    with patch("agent.notify.telegram.httpx.AsyncClient") as mock_client_cls:
+    with patch("backend.infrastructure.notify.telegram.httpx.AsyncClient") as mock_client_cls:
         mock_resp = AsyncMock()
         mock_resp.raise_for_status = lambda: None
         mock_client = AsyncMock()
@@ -100,8 +100,8 @@ async def test_telegram_send_mocked():
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client_cls.return_value = mock_client
 
-        from agent.config import Settings
-        from agent.notify.telegram import send_telegram
+        from backend.config import Settings
+        from backend.infrastructure.notify.telegram import send_telegram
 
         cfg = Settings(
             telegram_bot_token="token",

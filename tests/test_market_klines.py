@@ -2,9 +2,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, patch
 
-from agent.config import clear_settings_cache
-from agent.storage.database import close_db, init_db
-from agent.main import app
+from backend.config import clear_settings_cache
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.main import app
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ async def client():
 
 @pytest.mark.asyncio
 async def test_market_klines_requires_binance(client):
-    with patch("agent.api.market_routes.get_settings") as mock_settings:
+    with patch("backend.interfaces.api.market_routes.get_settings") as mock_settings:
         mock_settings.return_value.binance_configured = False
         resp = await client.get("/api/v1/market/klines?symbol=BTCUSDT&interval=1m&limit=30")
     assert resp.status_code == 503
@@ -33,7 +33,7 @@ async def test_market_klines_live_fetch(client):
         (1_700_000_060_000, 100.5, 102.0, 100.0, 101.0, 8.0),
     ]
 
-    with patch("agent.api.market_routes.get_settings") as mock_settings:
+    with patch("backend.interfaces.api.market_routes.get_settings") as mock_settings:
         settings = mock_settings.return_value
         settings.binance_configured = True
         settings.trade_symbol = "BTCUSDT"
@@ -42,7 +42,7 @@ async def test_market_klines_live_fetch(client):
         settings.database_url = "sqlite+aiosqlite:///./data/test.db"
 
         with patch(
-            "agent.market.klines._fetch_ohlcv_from_exchange",
+            "backend.infrastructure.market.klines._fetch_ohlcv_from_exchange",
             new=AsyncMock(return_value=fake_candles),
         ):
             resp = await client.get("/api/v1/market/klines?symbol=BTCUSDT&interval=1m&limit=30")

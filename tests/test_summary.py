@@ -3,10 +3,10 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.main import app
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import DecisionRepository, SessionSummaryRepository, TradeRepository
-from agent.summary.pnl import compute_pnl
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import DecisionRepository, SessionSummaryRepository, TradeRepository
+from backend.application.summary.pnl import compute_pnl
 
 
 def test_compute_pnl_round_trip():
@@ -76,7 +76,7 @@ async def test_summary_builds_from_trades_in_window(client):
         completion_tokens=5,
         total_tokens=15,
     )
-    from agent.summary.aggregator import build_session_summary
+    from backend.application.summary.aggregator import build_session_summary
 
     summary = await build_session_summary(
         session_id=str(uuid.uuid4()),

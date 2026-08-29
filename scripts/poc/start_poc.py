@@ -98,7 +98,7 @@ def main() -> int:
 
     print(f"[start] 启动 API 服务  {base} ...")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "agent.main:app", "--host", args.host, "--port", str(args.port)],
+        [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", args.host, "--port", str(args.port)],
         cwd=ROOT,
     )
 

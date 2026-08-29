@@ -4,12 +4,12 @@ from unittest.mock import patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.config import Settings, clear_settings_cache
-from agent.main import app
-from agent.security.crypto import decrypt_secret, encrypt_secret
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import SessionSummaryRepository
-from agent.summary.aggregator import save_interim_snapshot
+from backend.config import Settings, clear_settings_cache
+from backend.main import app
+from backend.interfaces.security.crypto import decrypt_secret, encrypt_secret
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import SessionSummaryRepository
+from backend.application.summary.aggregator import save_interim_snapshot
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ async def test_notify_status_includes_email(client):
 
 
 def test_parse_secret_formats():
-    from agent.security.secrets_loader import parse_secret_value
+    from backend.interfaces.security.secrets_loader import parse_secret_value
 
     assert parse_secret_value("binance", "k:s") == {
         "binance_api_key": "k",
@@ -161,8 +161,8 @@ def test_parse_secret_formats():
 
 
 def test_merge_patch_env_priority():
-    from agent.config import Settings
-    from agent.security.secrets_loader import _merge_patch
+    from backend.config import Settings
+    from backend.interfaces.security.secrets_loader import _merge_patch
 
     base = Settings(llm_api_key="", binance_api_key="")
     merged = _merge_patch(base, {"llm_api_key": "sk-db", "binance_api_key": "k", "binance_api_secret": "s"})
@@ -202,8 +202,8 @@ async def test_metrics_endpoint(client):
 
 
 def test_resolve_trade_market():
-    from agent.config import Settings
-    from agent.trading.executor import resolve_trade_market
+    from backend.config import Settings
+    from backend.domain.trading.executor import resolve_trade_market
 
     cfg = Settings(futures_enabled=True, default_trade_market="spot")
     assert resolve_trade_market({"market": "futures_u"}, cfg) == "futures_u"

@@ -2,9 +2,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, patch
 
-from agent.main import app
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import StrategyRepository
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import StrategyRepository
 
 pytestmark = pytest.mark.skip(reason="策略模板 API 已从 Agent 产品范围移除")
 
@@ -51,7 +51,7 @@ async def test_strategy_tick_hold(client):
         "last": 65000.0,
         "balance": {"free": {"USDT": 1000.0, "BTC": 0.0}},
     }
-    with patch("agent.strategy.engine.fetch_market", AsyncMock(return_value=market)):
+    with patch("backend.domain.strategy.engine.fetch_market", AsyncMock(return_value=market)):
         tick = await client.post(f"/api/v1/strategies/{sid}/tick")
     assert tick.status_code == 200
     assert tick.json()["status"] == "hold"

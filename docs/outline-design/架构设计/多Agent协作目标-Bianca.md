@@ -140,10 +140,10 @@ Strategy Agent 节点内部调用上述 Tool；**不**在 tick 外独立循环�
 
 | 现有 | 目标 |
 |------|------|
-| `agent/strategy/runner.py` | 降级为可选兜底；默认不随 API 启动 |
-| `agent/strategy/engine.py` | 核心逻辑复用，`evaluate_*` + `execute_signal_pipeline` |
-| `agent/graph/supervisor.py` | 扩展为协作图入口 |
-| `agent/graph/analysis_agent.py` | 拆为独立节点，逻辑不变 |
+| `backend/domain/strategy/runner.py` | 降级为可选兜底；默认不随 API 启动 |
+| `backend/domain/strategy/engine.py` | 核心逻辑复用，`evaluate_*` + `execute_signal_pipeline` |
+| `backend/application/graph/supervisor.py` | 扩展为协作图入口 |
+| `backend/application/graph/analysis_agent.py` | 拆为独立节点，逻辑不变 |
 
 ---
 
@@ -170,7 +170,7 @@ merge_meta: dict                # {mode, conflict, winner, reason}
 
 | 展示 | 数据源 |
 |------|--------|
-| Worker 行「参与 Agent」 | `agent/status` 扩展 `last_agents[]` |
+| Worker 行「参与 Agent」 | `backend/status` 扩展 `last_agents[]` |
 | 决策回放 | checkpoint 中 `orchestrator_plan` + `agent_signals` |
 | 冲突标记 | merge_meta.conflict=true 时 Worker 行黄色 |
 
@@ -224,7 +224,7 @@ merge_meta: dict                # {mode, conflict, winner, reason}
 
 | 文档 | 关系 |
 |------|------|
-| [架构设计文档-Bianca.md](./架构设计文档-Bianca.md) | C4 / 现网 Supervisor 拓扑 |
+| [代码布局-Bianca.md](./代码布局-Bianca.md) | 前后端 + 四层目录 |
 | [Agent运维看板设计-Bianca.md](./Agent运维看板设计-Bianca.md) | M9 看板扩展 |
 | [里程碑清单-Bianca.md](../../module-scheduling/里程碑清单-Bianca.md) | 追加 M9 条目 |
 | [PRD-Bianca.md](../../PRD-Bianca.md) | 产品定位不变 |

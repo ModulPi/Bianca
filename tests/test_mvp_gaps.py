@@ -1,10 +1,10 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.config import clear_settings_cache
-from agent.exchange.quotes import ticker_to_response
-from agent.main import app
-from agent.storage.database import close_db, init_db
+from backend.config import clear_settings_cache
+from backend.infrastructure.exchange.quotes import ticker_to_response
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
 
 
 @pytest.fixture

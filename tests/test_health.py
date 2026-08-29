@@ -1,8 +1,8 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.main import app
-from agent.storage.database import init_db, close_db
+from backend.main import app
+from backend.infrastructure.storage.database import init_db, close_db
 
 
 @pytest.fixture

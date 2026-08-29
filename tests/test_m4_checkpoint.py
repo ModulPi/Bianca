@@ -1,5 +1,5 @@
-from agent.checkpoint.store import checkpointer_backend, postgres_checkpointer_dsn
-from agent.config import Settings, clear_settings_cache
+from backend.infrastructure.checkpoint.store import checkpointer_backend, postgres_checkpointer_dsn
+from backend.config import Settings, clear_settings_cache
 
 
 def test_postgres_checkpointer_dsn():

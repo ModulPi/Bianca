@@ -108,7 +108,7 @@
 
 | 列 | 字段 | 数据源 |
 |----|------|--------|
-| Symbol | `workers[].symbol` | `agent/status` |
+| Symbol | `workers[].symbol` | `backend/status` |
 | Tick 次数 | `workers[].tick_count` | 5s |
 | 最近状态 | `workers[].last_status`（filled / awaiting_confirmation / risk_rejected …） | 5s |
 | 最近 tick 时间 | `workers[].last_tick` | 5s |
@@ -156,7 +156,7 @@ GET /api/v1/dashboard/positions?symbols=BTCUSDT,ETHUSDT
 | 未实现盈亏 USDT | `pnl.unrealized_usdt` | 15s |
 | 现金净流入 USDT | `pnl.cash_flow_usdt` | 15s |
 | 合计 total_usdt | `pnl.total_usdt` | 15s |
-| 当日 legacy PnL | `pnl.daily_pnl_legacy` / `agent/status.daily_pnl` | 15s |
+| 当日 legacy PnL | `pnl.daily_pnl_legacy` / `backend/status.daily_pnl` | 15s |
 | 闭环徽章 | `trades.loop_closed`（PoC 指标，24×7 模式下仅作参考） | 15s |
 
 **轻量曲线（可选，非 K 线）：** 基于 `GET /trades?limit=100` 按时间累计 realized 折线，仅会话级趋势，不是行情 K 线。
@@ -308,7 +308,7 @@ GET /api/v1/dashboard/snapshot
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| **P0** | 复用现有 API 拼装看板（`web/` 运维页扩展） | ✅ |
+| **P0** | 复用现有 API 拼装看板（`frontend/` 运维页扩展） | ✅ |
 | **P1** | `GET /dashboard/snapshot` 聚合 API | ✅ |
 | **P1** | 批量 ticker、按 Worker Token 分摊 | ✅ |
 | **P1** | ETag / If-None-Match、分层 TTL、变更 invalidate | ✅ |
@@ -320,4 +320,4 @@ GET /api/v1/dashboard/snapshot
 
 - 用户故事：[US-M01 运维看板](../用户故事-Bianca.md#us-m01agent-运维看板)
 - 汇总口径：[汇总管理模块设计](./汇总管理模块设计-Bianca.md)
-- 架构：[架构设计文档](./架构设计文档-Bianca.md)
+- 代码布局：[代码布局-Bianca.md](./代码布局-Bianca.md)

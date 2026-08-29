@@ -1,8 +1,8 @@
 import pytest
 
-from agent.config import Settings
-from agent.risk.engine import RiskEngine
-from agent.risk.rules import MaxTradeAmountRule, RiskContext, RiskVerdict
+from backend.config import Settings
+from backend.domain.risk.engine import RiskEngine
+from backend.domain.risk.rules import MaxTradeAmountRule, RiskContext, RiskVerdict
 
 
 def _settings(**overrides) -> Settings:

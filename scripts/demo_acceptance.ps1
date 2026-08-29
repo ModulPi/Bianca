@@ -41,7 +41,7 @@ try {
     $health = $null
     $apiOk = $false
 }
-Step "API /health" $apiOk $(if (-not $apiOk) { "start: uvicorn agent.main:app --host 127.0.0.1 --port 8000" })
+Step "API /health" $apiOk $(if (-not $apiOk) { "start: uvicorn backend.main:app --host 127.0.0.1 --port 8000" })
 if (-not $apiOk) { exit 1 }
 
 $llmOk = ($health.llm -eq "ok")

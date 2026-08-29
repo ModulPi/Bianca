@@ -3,10 +3,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.config import Settings, clear_settings_cache, set_effective_settings
-from agent.main import app
-from agent.runner import AgentRunner, WorkerSnapshot, get_runner
-from agent.storage.database import close_db, init_db
+from backend.config import Settings, clear_settings_cache, set_effective_settings
+from backend.main import app
+from backend.application.runner import AgentRunner, WorkerSnapshot, get_runner
+from backend.infrastructure.storage.database import close_db, init_db
 
 
 def _runner_settings(**overrides) -> Settings:
@@ -59,10 +59,10 @@ async def test_agent_start_stop(client):
     cfg = _runner_settings()
     clear_settings_cache()
     set_effective_settings(cfg)
-    with patch("agent.runner.run_agent_tick", AsyncMock(return_value={"status": "signal_only"})):
-        with patch("agent.validation.paper_gate.assert_demo_mode_for_trading", AsyncMock()):
-            with patch("agent.validation.paper_gate.ensure_validation_running", AsyncMock()):
-                with patch("agent.cache.redis_client.set_active_session", AsyncMock()):
+    with patch("backend.application.runner.run_agent_tick", AsyncMock(return_value={"status": "signal_only"})):
+        with patch("backend.application.validation.paper_gate.assert_demo_mode_for_trading", AsyncMock()):
+            with patch("backend.application.validation.paper_gate.ensure_validation_running", AsyncMock()):
+                with patch("backend.infrastructure.cache.redis_client.set_active_session", AsyncMock()):
                     start = await client.post("/api/v1/agent/start")
                     assert start.status_code == 200, start.text
 
@@ -81,7 +81,7 @@ async def test_agent_start_stop(client):
 @pytest.mark.asyncio
 async def test_agent_start_requires_llm(client):
     cfg = _runner_settings(llm_api_key="", llm_provider="deepseek")
-    with patch("agent.api.routes.get_settings", return_value=cfg):
+    with patch("backend.interfaces.api.routes.get_settings", return_value=cfg):
         resp = await client.post("/api/v1/agent/start")
         assert resp.status_code == 503
 
@@ -93,9 +93,9 @@ async def test_runner_records_tick(client):
     runner._snapshot.running = True
     runner._snapshot.symbols = ["BTCUSDT"]
     runner._snapshot.workers = {"BTCUSDT": WorkerSnapshot(symbol="BTCUSDT")}
-    with patch("agent.runner.run_agent_tick", AsyncMock(return_value={"status": "filled"})):
-        with patch("agent.runner.get_settings", return_value=cfg):
-            with patch("agent.degradation.get_settings", return_value=cfg):
+    with patch("backend.application.runner.run_agent_tick", AsyncMock(return_value={"status": "filled"})):
+        with patch("backend.application.runner.get_settings", return_value=cfg):
+            with patch("backend.application.degradation.get_settings", return_value=cfg):
                 await runner._run_one_tick(cfg, "BTCUSDT")
     snap = await runner.get_snapshot()
     assert snap.tick_count >= 1

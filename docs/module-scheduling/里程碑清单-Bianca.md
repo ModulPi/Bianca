@@ -32,8 +32,8 @@
 |------|------|------|
 | 002 **兼容** DDL（`schema_mode=mvp`） | ✅ | `002_mvp_postgres_compat.sql` |
 | 双栈 Docker + health 验证 | ✅ | TimescaleDB 正式镜像 + `verify_m4_stack.ps1` |
-| Redis 连接 + active session 缓存 | ✅ | `agent/cache/redis_client.py` |
-| JSONB 双栈 ORM（`JsonText`） | ✅ | `agent/storage/json_column.py` |
+| Redis 连接 + active session 缓存 | ✅ | `backend/infrastructure/cache/redis_client.py` |
+| JSONB 双栈 ORM（`JsonText`） | ✅ | `backend/infrastructure/storage/json_column.py` |
 | `klines` 采集写入 | ✅ | `kline_collector` + `KlineRepository` |
 | TimescaleDB 压缩 / retention / 连续聚合 | ✅ | `klines_5m` 连续聚合视图 |
 | `positions` 表业务读写 | ✅ | tick/execute 同步 + `GET /api/v1/positions` |
@@ -48,12 +48,12 @@
 
 | 子项 | 状态 | 说明 |
 |------|------|------|
-| 网格 / DCA / 趋势 评估器 | ✅ | `agent/strategy/{grid,dca,trend}.py` |
-| 策略 CRUD + 启停 / Tick API | ✅ | `agent/api/strategy_routes.py` |
-| 后台 StrategyRunner 循环 | ✅ | `agent/strategy/runner.py` |
+| 网格 / DCA / 趋势 评估器 | ✅ | `backend/domain/strategy/{grid,dca,trend}.py` |
+| 策略 CRUD + 启停 / Tick API | ✅ | `backend/interfaces/api/strategy_routes.py` |
+| 后台 StrategyRunner 循环 | ✅ | `backend/domain/strategy/runner.py` |
 | API 重启自动恢复 running 策略 | ✅ | `resume_strategy_runner_if_needed()` |
 | 趋势策略读 5m K 线（MVP 栈） | ✅ | `enrich_market_with_klines()` |
-| Web 策略页 | ✅ | `web/src/pages/StrategiesPage.tsx` |
+| Web 策略页 | ✅ | `frontend/src/pages/StrategiesPage.tsx` |
 | PG 栈策略 Tick | ✅ | `test_m4_pg_integration::test_pg_strategy_tick_hold` |
 | 策略 Live E2E（真实下单） | ❌ | 需 `BINANCE_PROXY` + Demo Key |
 
@@ -61,7 +61,7 @@
 
 | 子项 | 状态 | 说明 |
 |------|------|------|
-| 8 条风控规则 | ✅ | `agent/risk/rules.py` + `test_m6_risk_rules.py` |
+| 8 条风控规则 | ✅ | `backend/domain/risk/rules.py` + `test_m6_risk_rules.py` |
 | 风控拒单写 `risk_events` | ✅ | `run_risk_agent()` + Telegram 通知 |
 | 半自动 pending 队列 | ✅ | `queue_pending_signal()` + WebSocket |
 | 确认 / 拒绝 / 超时过期 | ✅ | `confirmation/service.py` + `_expire_pending_loop` |
@@ -76,9 +76,9 @@
 
 | 子项 | 状态 | 说明 |
 |------|------|------|
-| SessionAggregator / PnLCalculator | ✅ | `agent/summary/aggregator.py`、`pnl.py` |
+| SessionAggregator / PnLCalculator | ✅ | `backend/application/summary/aggregator.py`、`pnl.py` |
 | MVP 栈持仓快照（positions 表） | ✅ | `resolve_session_positions()` |
-| Summary API（current/latest/sessions/daily/close） | ✅ | `agent/api/summary_routes.py` |
+| Summary API（current/latest/sessions/daily/close） | ✅ | `backend/interfaces/api/summary_routes.py` |
 | Agent stop 自动固化快照 | ✅ | `runner.stop()` → `close_session()` |
 | 闭环检测自动停 Agent | ✅ | `_maybe_stop_on_loop_closed()` |
 | Web 仪表盘 / 会话历史 | ✅ | `DashboardPage`、`SessionsPage` |
@@ -102,10 +102,10 @@
 
 | 子项 | 状态 | 说明 |
 |------|------|------|
-| `paper_validations` 模拟门禁 | ✅ | `agent/validation/paper_gate.py` |
+| `paper_validations` 模拟门禁 | ✅ | `backend/application/validation/paper_gate.py` |
 | 累计时长 / 闭环 / filled 校验 | ✅ | `evaluate_validation()` |
 | demo → live 切换门禁 | ✅ | `trading/mode.py` + Agent 启动校验 |
-| Telegram 通知（会话/风控/日摘要） | ✅ | `agent/notify/telegram.py` |
+| Telegram 通知（会话/风控/日摘要） | ✅ | `backend/infrastructure/notify/telegram.py` |
 | 通知 API（test / daily-digest / status） | ✅ | `validation_routes.py` |
 | 合约 API stub | ✅ | `GET /futures/status`（`futures_enabled=false`） |
 | Web 门禁页 | ✅ | `ValidationPage.tsx` |
@@ -119,8 +119,8 @@
 
 | 子项 | 状态 | 说明 |
 |------|------|------|
-| M9.1 趋势策略 Tool + Strategy 节点 | ✅ | `agent/graph/strategy_tools.py`、`strategy_agent.py` |
-| M9.2 Merge 节点 + llm_primary | ✅ | `agent/graph/merge_signals.py` |
+| M9.1 趋势策略 Tool + Strategy 节点 | ✅ | `backend/application/graph/strategy_tools.py`、`strategy_agent.py` |
+| M9.2 Merge 节点 + llm_primary | ✅ | `backend/application/graph/merge_signals.py` |
 | M9.3 Orchestrator + 协作图 | ✅ | `supervisor.py` 扩展拓扑 |
 | M9.4 停默认 StrategyRunner | ✅ | `STRATEGY_RUNNER_AUTO_START=false` |
 | M9.5 看板详情 + 回放 UI | ✅ | Worker 列、CheckpointTimeline 三栏 |
@@ -181,9 +181,9 @@ py -m pytest tests/ -m "not pg" -q
 
 | 用途 | 路径 |
 |------|------|
-| PG DDL | `agent/storage/sql/002_mvp_postgres_compat.sql` |
-| JSONB 双栈 | `agent/storage/json_column.py` |
-| Checkpointer | `agent/checkpoint/store.py` |
-| 持仓同步 | `agent/positions/sync.py` |
+| PG DDL | `backend/infrastructure/storage/sql/002_mvp_postgres_compat.sql` |
+| JSONB 双栈 | `backend/infrastructure/storage/json_column.py` |
+| Checkpointer | `backend/infrastructure/checkpoint/store.py` |
+| 持仓同步 | `backend/domain/positions/sync.py` |
 | M4 验证 | `scripts/verify_m4_stack.ps1`、`scripts/verify_m4_e2e.ps1` |
 | PG 测试 | `tests/test_m4_pg_integration.py` |

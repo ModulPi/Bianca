@@ -1,6 +1,6 @@
-from agent.strategy.dca import evaluate_dca
-from agent.strategy.grid import evaluate_grid
-from agent.strategy.trend import evaluate_trend
+from backend.domain.strategy.dca import evaluate_dca
+from backend.domain.strategy.grid import evaluate_grid
+from backend.domain.strategy.trend import evaluate_trend
 
 
 def test_grid_buy_on_level_drop():

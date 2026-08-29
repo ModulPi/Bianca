@@ -1,6 +1,6 @@
-from agent.config import Settings
-from agent.llm.prompts import resolve_worker_symbol
-from agent.risk.rules import InsufficientBalanceRule, PositionLimitRule, RiskContext
+from backend.config import Settings
+from backend.domain.llm.prompts import resolve_worker_symbol
+from backend.domain.risk.rules import InsufficientBalanceRule, PositionLimitRule, RiskContext
 
 
 def test_resolve_worker_symbol_prefers_market_data():

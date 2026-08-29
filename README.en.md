@@ -4,6 +4,11 @@ English | **[简体中文](./README.md)**
 
 Autonomous trading **Agent engine** — not a trading platform. LLM-driven 24×7 execution, parallel workers, auto-degrade to semi-auto for human intervention.
 
+## Layout
+
+- `frontend/` — React ops dashboard
+- `backend/` — layered Python API (`interfaces` / `application` / `domain` / `infrastructure`)
+
 ## Quick Start
 
 ```bash

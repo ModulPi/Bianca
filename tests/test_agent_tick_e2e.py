@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.graph.supervisor import run_agent_tick
-from agent.llm.schemas import AnalysisResult, TradeSignal
-from agent.main import app
-from agent.storage.database import close_db, init_db
+from backend.application.graph.supervisor import run_agent_tick
+from backend.domain.llm.schemas import AnalysisResult, TradeSignal
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ async def test_agent_tick_hold_signal_only():
         "last": 65000.0,
         "balance": {"free": {"USDT": 1000.0, "BTC": 0.0}},
     }
-    with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_result)):
+    with patch("backend.application.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_result)):
         result = await run_agent_tick(market_data=market, thread_id="e2e-hold")
     assert result["status"] == "signal_only"
     await close_db()
@@ -72,9 +72,9 @@ async def test_agent_tick_buy_execute_path():
         "balance": {"free": {"USDT": 1000.0, "BTC": 0.0}},
     }
 
-    with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
+    with patch("backend.application.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
         with patch(
-            "agent.graph.execute_agent.execute_market_order",
+            "backend.application.graph.execute_agent.execute_market_order",
             AsyncMock(return_value=mock_order),
         ):
             result = await run_agent_tick(market_data=market, thread_id="e2e-buy")

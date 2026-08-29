@@ -1,6 +1,6 @@
 """M9 多 Agent 信号合并单测。"""
 
-from agent.graph.merge_signals import merge_signals
+from backend.application.graph.merge_signals import merge_signals
 
 
 def _sig(agent: str, action: str, reason: str = "", confidence: float = 0.8) -> dict:

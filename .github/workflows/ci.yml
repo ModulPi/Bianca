@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: Bianca/web
+        working-directory: Bianca/frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

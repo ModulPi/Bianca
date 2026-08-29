@@ -1,6 +1,6 @@
 import pytest
 
-from agent.positions.sync import sync_positions_from_balance
+from backend.domain.positions.sync import sync_positions_from_balance
 
 
 @pytest.mark.asyncio

@@ -2,9 +2,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, patch
 
-from agent.main import app
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import PendingSignalRepository
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import PendingSignalRepository
 
 
 @pytest.fixture
@@ -31,8 +31,11 @@ async def test_pending_signal_confirm_flow(client):
     mock_demo = AsyncMock()
     mock_demo.__aenter__ = AsyncMock(return_value=mock_demo)
     mock_demo.__aexit__ = AsyncMock(return_value=False)
-    with patch("agent.graph.execute_agent.SpotDemoExchange", return_value=mock_demo):
-        with patch("agent.graph.execute_agent._place_market_order", AsyncMock(return_value=mock_order)):
+    with patch("backend.domain.trading.executor.SpotDemoExchange", return_value=mock_demo):
+        with patch(
+            "backend.domain.trading.executor._place_spot_market_order",
+            AsyncMock(return_value=mock_order),
+        ):
             resp = await client.post(f"/api/v1/pending-signals/{row.id}/confirm")
     assert resp.status_code == 200
     body = resp.json()
@@ -62,7 +65,7 @@ async def test_pending_signal_reject(client):
 
 @pytest.mark.asyncio
 async def test_strategy_confirm_alias(client):
-    from agent.storage.repository import StrategyRepository
+    from backend.infrastructure.storage.repository import StrategyRepository
 
     repo = StrategyRepository()
     strategy = await repo.create(
@@ -81,6 +84,9 @@ async def test_strategy_confirm_alias(client):
         ttl_minutes=30,
         strategy_id=sid,
     )
-    with patch("agent.graph.execute_agent._place_market_order", AsyncMock(return_value={"id": "x", "filled": 1, "average": 1})):
+    with patch(
+        "backend.domain.trading.executor._place_spot_market_order",
+        AsyncMock(return_value={"id": "x", "filled": 1, "average": 1}),
+    ):
         resp = await client.post(f"/api/v1/strategies/{sid}/confirm")
     assert resp.status_code == 200

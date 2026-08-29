@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./web
+    build: ./frontend
     ports:
       - "127.0.0.1:3001:80"
     depends_on:

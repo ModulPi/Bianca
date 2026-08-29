@@ -1,7 +1,7 @@
 import pytest
 
-from agent.api.schemas import BalanceResponse, TickerResponse
-from agent.dashboard.positions import (
+from backend.interfaces.api.schemas import BalanceResponse, TickerResponse
+from backend.application.dashboard.positions import (
     build_dashboard_positions,
     enrich_session_positions,
     quote_currency_for_market,
@@ -33,7 +33,7 @@ def test_build_dashboard_positions_a_share_placeholder():
 
 
 def test_enrich_session_positions_items():
-    from agent.api.schemas import DashboardPositionItem
+    from backend.interfaces.api.schemas import DashboardPositionItem
 
     items = [
         DashboardPositionItem(

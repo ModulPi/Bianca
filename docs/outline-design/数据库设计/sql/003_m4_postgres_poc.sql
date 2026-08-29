@@ -1,2 +1,0 @@
--- 已迁移至 agent/storage/sql/002_mvp_postgres_compat.sql
--- 本文件保留作文档索引；运行时 PG 初始化请使用 agent 包内 SQL。

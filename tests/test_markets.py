@@ -1,7 +1,7 @@
 import pytest
 
-from agent.config import Settings, clear_settings_cache, set_effective_settings
-from agent.markets.registry import get_market_adapter, list_market_kinds
+from backend.config import Settings, clear_settings_cache, set_effective_settings
+from backend.domain.markets.registry import get_market_adapter, list_market_kinds
 
 
 def test_list_market_kinds():

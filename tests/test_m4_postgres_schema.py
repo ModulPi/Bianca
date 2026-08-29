@@ -1,7 +1,7 @@
 import pytest
 
-from agent.storage.database import _PG_DDL_PATH, is_postgres_url, is_sqlite_url, schema_mode
-from agent.storage.json_utils import parse_json_field
+from backend.infrastructure.storage.database import _PG_DDL_PATH, is_postgres_url, is_sqlite_url, schema_mode
+from backend.infrastructure.storage.json_utils import parse_json_field
 
 
 def test_pg_ddl_file_exists():

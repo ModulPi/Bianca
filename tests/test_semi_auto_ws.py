@@ -2,11 +2,11 @@ import pytest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
-from agent.config import Settings, clear_settings_cache, set_effective_settings
-from agent.confirmation.service import expire_pending_signals, queue_pending_signal
-from agent.graph.supervisor import route_after_merge
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import PendingSignalRepository
+from backend.config import Settings, clear_settings_cache, set_effective_settings
+from backend.application.confirmation.service import expire_pending_signals, queue_pending_signal
+from backend.application.graph.supervisor import route_after_merge
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import PendingSignalRepository
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ async def test_queue_pending_signal_creates_row(_db):
         "decision_id": "dec-semi",
         "session_id": "sess-semi",
     }
-    with patch("agent.confirmation.service.ws_manager.broadcast", AsyncMock()) as broadcast:
+    with patch("backend.application.confirmation.service.ws_manager.broadcast", AsyncMock()) as broadcast:
         result = await queue_pending_signal(state, session_id="sess-semi")
     assert result["status"] == "awaiting_confirmation"
     assert result.get("pending_signal_id")
@@ -61,8 +61,8 @@ async def test_expire_pending_signals_marks_stale_rows(_db):
         session_id=None,
         ttl_minutes=30,
     )
-    from agent.storage.database import get_session_factory
-    from agent.storage.models import PendingSignalRow
+    from backend.infrastructure.storage.database import get_session_factory
+    from backend.infrastructure.storage.models import PendingSignalRow
 
     factory = get_session_factory()
     async with factory() as db:

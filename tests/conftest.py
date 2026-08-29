@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.config import clear_settings_cache
-from agent.storage.database import close_db, init_db
+from backend.config import clear_settings_cache
+from backend.infrastructure.storage.database import close_db, init_db
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -49,8 +49,8 @@ async def reset_db_engine(request):
 @pytest.fixture(autouse=True)
 def demo_trading_mode():
     demo = AsyncMock(return_value="demo")
-    with patch("agent.trading.mode.get_trading_mode", demo):
-        with patch("agent.api.validation_routes.get_trading_mode", demo):
+    with patch("backend.domain.trading.mode.get_trading_mode", demo):
+        with patch("backend.interfaces.api.validation_routes.get_trading_mode", demo):
             yield
 
 
@@ -58,11 +58,11 @@ def demo_trading_mode():
 def mock_position_sync():
     """避免 execute/fetch_market 在未 mock 时访问真实 Binance Demo。"""
     with patch(
-        "agent.positions.sync.sync_positions_from_exchange",
+        "backend.domain.positions.sync.sync_positions_from_exchange",
         AsyncMock(return_value=0),
     ):
         with patch(
-            "agent.positions.sync.sync_positions_from_balance",
+            "backend.domain.positions.sync.sync_positions_from_balance",
             AsyncMock(return_value=0),
         ):
             yield

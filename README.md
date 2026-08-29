@@ -8,24 +8,20 @@
 
 ```
 Bianca/
-├── agent/                 # Python 后端（API · Agent · 风控 · 策略）
-├── web/                   # React 运维看板
-├── tests/                 # pytest
-├── scripts/               # 运维与验收脚本
-│   ├── poc/               # PoC 一键启动 / 闭环等待
-│   ├── up.ps1             # 启动基础栈（SQLite）
-│   ├── up-m4.ps1          # 启动 M4 全栈（PG + Redis）
-│   └── verify_m4_*.ps1    # 验收脚本
+├── frontend/              # React 运维看板（表现层）
+├── backend/               # Python 后端
+│   ├── interfaces/        # 接口层：api · security
+│   ├── application/       # 应用层：runner · graph · confirmation…
+│   ├── domain/            # 领域层：strategy · factors · risk · llm…
+│   ├── infrastructure/    # 基建层：storage · exchange · cache…
+│   ├── main.py
+│   └── config.py
+├── tests/
+├── scripts/
 ├── deploy/
-│   ├── compose/           # Docker Compose 叠加配置
-│   │   ├── m4.yml         # PostgreSQL + Redis
-│   │   ├── mvp.yml        # Prometheus + Grafana（可选）
-│   │   └── m4.verify.yml  # PG 镜像降级
-│   ├── prometheus.yml
-│   └── grafana/
-├── docs/                  # PRD · 架构 · 里程碑
-├── data/                  # 运行时数据（gitignore）
-├── docker-compose.yml     # 基础栈：api + web
+├── docs/
+├── data/
+├── docker-compose.yml     # 基础栈：api + web(frontend)
 ├── Dockerfile
 └── pyproject.toml
 ```
@@ -70,7 +66,7 @@ python scripts/poc/run_poc_closure.py
 ## 运维 Web（Agent 看板）
 
 ```bash
-docker compose up -d api && cd web && npm install && npm run dev
+docker compose up -d api && cd frontend && npm install && npm run dev
 # http://127.0.0.1:3001
 ```
 

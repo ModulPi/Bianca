@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agent.storage.json_column import JsonText
+from backend.infrastructure.storage.json_column import JsonText
 
 pytestmark = pytest.mark.no_db
 

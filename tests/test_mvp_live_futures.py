@@ -1,11 +1,11 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.config import clear_settings_cache
-from agent.exchange.futures_coin_demo import _coin_symbol
-from agent.main import app
-from agent.storage.database import close_db, init_db
-from agent.trading.executor import resolve_trade_market
+from backend.config import clear_settings_cache
+from backend.infrastructure.exchange.futures_coin_demo import _coin_symbol
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.domain.trading.executor import resolve_trade_market
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def test_coin_symbol_mapping():
 
 
 def test_resolve_futures_coin_market():
-    from agent.config import Settings
+    from backend.config import Settings
 
     cfg = Settings(futures_enabled=True)
     assert resolve_trade_market({"market": "futures_coin"}, cfg) == "futures_coin"

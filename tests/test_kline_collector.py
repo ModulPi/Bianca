@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.config import Settings, clear_settings_cache
-from agent.market.kline_collector import (
+from backend.config import Settings, clear_settings_cache
+from backend.infrastructure.market.kline_collector import (
     KlineBar,
     collector_sleep_seconds,
     collect_klines_once,
@@ -98,8 +98,8 @@ async def test_collect_klines_once_inserts_bars():
     mock_demo.__aenter__ = AsyncMock(return_value=mock_demo)
     mock_demo.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("agent.market.kline_collector.KlineRepository", return_value=mock_repo):
-        with patch("agent.market.kline_collector.SpotDemoExchange", return_value=mock_demo):
+    with patch("backend.infrastructure.market.kline_collector.KlineRepository", return_value=mock_repo):
+        with patch("backend.infrastructure.market.kline_collector.SpotDemoExchange", return_value=mock_demo):
             inserted = await collect_klines_once(settings=cfg)
 
     assert inserted == 1
@@ -112,7 +112,7 @@ async def test_collect_klines_once_inserts_bars():
 
 @pytest.mark.asyncio
 async def test_list_5m_bars_poc_returns_empty():
-    from agent.storage.repository import KlineRepository
+    from backend.infrastructure.storage.repository import KlineRepository
 
     repo = KlineRepository()
     assert await repo.list_5m_bars("BTCUSDT") == []

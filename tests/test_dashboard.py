@@ -2,13 +2,13 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, patch
 
-from agent.config import clear_settings_cache
-from agent.dashboard.cache import clear_snapshot_cache
-from agent.dashboard.etag import clear_snapshot_store
-from agent.dashboard.invalidate import invalidate_dashboard_snapshot
-from agent.dashboard.snapshot import build_dashboard_snapshot
-from agent.main import app
-from agent.storage.database import close_db, init_db
+from backend.config import clear_settings_cache
+from backend.application.dashboard.cache import clear_snapshot_cache
+from backend.application.dashboard.etag import clear_snapshot_store
+from backend.application.dashboard.invalidate import invalidate_dashboard_snapshot
+from backend.application.dashboard.snapshot import build_dashboard_snapshot
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ async def test_dashboard_snapshot_shape(client):
 
 @pytest.mark.asyncio
 async def test_exchange_tickers_without_binance(client):
-    with patch("agent.api.routes.get_settings") as mock_settings:
+    with patch("backend.interfaces.api.routes.get_settings") as mock_settings:
         mock_settings.return_value.binance_configured = False
         mock_settings.return_value.trade_symbol = "BTCUSDT"
         resp = await client.get("/api/v1/exchange/tickers?symbols=BTCUSDT,ETHUSDT")
@@ -62,12 +62,12 @@ async def test_snapshot_health_cache(client):
 
     async def counted_health():
         calls["n"] += 1
-        from agent.api.health_service import build_health_response
+        from backend.interfaces.api.health_service import build_health_response
 
         return await build_health_response()
 
     with patch(
-        "agent.dashboard.snapshot.build_health_response",
+        "backend.application.dashboard.snapshot.build_health_response",
         new=AsyncMock(side_effect=counted_health),
     ):
         clear_snapshot_cache()
@@ -116,7 +116,7 @@ async def test_invalidate_forces_snapshot_rebuild(client):
         return await original()
 
     with patch(
-        "agent.api.dashboard_routes.build_dashboard_snapshot",
+        "backend.interfaces.api.dashboard_routes.build_dashboard_snapshot",
         new=AsyncMock(side_effect=counting_build),
     ):
         invalidate_dashboard_snapshot()

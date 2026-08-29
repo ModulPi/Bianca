@@ -2,8 +2,8 @@ import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from agent.config import Settings, clear_settings_cache, set_effective_settings
-from agent.main import app
+from backend.config import Settings, clear_settings_cache, set_effective_settings
+from backend.main import app
 
 
 def test_ws_rejects_without_token_when_auth_enabled():

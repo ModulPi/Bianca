@@ -1,4 +1,4 @@
-from agent.storage.database import _split_sql_statements
+from backend.infrastructure.storage.database import _split_sql_statements
 
 
 def test_split_sql_respects_dollar_quoted_do_block():

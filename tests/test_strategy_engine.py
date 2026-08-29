@@ -5,13 +5,13 @@ from httpx import ASGITransport, AsyncClient
 
 pytestmark = pytest.mark.skip(reason="策略模板 API 已从 Agent 产品范围移除")
 
-from agent.config import Settings, clear_settings_cache
-from agent.main import app
-from agent.storage.database import close_db, init_db
-from agent.storage.repository import StrategyRepository
-from agent.strategy.base import StrategySignal, with_market
-from agent.strategy.engine import execute_signal_pipeline, run_strategy_tick
-from agent.trading.executor import resolve_trade_market
+from backend.config import Settings, clear_settings_cache
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
+from backend.infrastructure.storage.repository import StrategyRepository
+from backend.domain.strategy.base import StrategySignal, with_market
+from backend.domain.strategy.engine import execute_signal_pipeline, run_strategy_tick
+from backend.domain.trading.executor import resolve_trade_market
 
 
 @pytest.fixture
@@ -69,8 +69,8 @@ async def test_execute_pipeline_calls_paper_gate():
     )
     market = {"symbol": "BTCUSDT", "last": 65000.0, "balance": {"free": {"USDT": 100.0}}}
 
-    with patch("agent.strategy.engine.assert_demo_mode_for_trading", AsyncMock()) as gate:
-        with patch("agent.strategy.engine.run_risk_agent", AsyncMock(return_value={"risk_decision": {"approved": False}})):
+    with patch("backend.domain.strategy.engine.assert_demo_mode_for_trading", AsyncMock()) as gate:
+        with patch("backend.domain.strategy.engine.run_risk_agent", AsyncMock(return_value={"risk_decision": {"approved": False}})):
             result = await execute_signal_pipeline(
                 signal,
                 market,
@@ -104,10 +104,10 @@ async def test_strategy_tick_passes_market_to_signal(client):
         captured["market"] = signal.to_dict().get("market")
         return {"status": "hold"}
 
-    with patch("agent.strategy.engine.fetch_market_snapshot", AsyncMock(return_value=market)):
-        with patch("agent.strategy.engine.execute_signal_pipeline", side_effect=_capture_pipeline):
-            with patch("agent.strategy.engine.evaluate_strategy") as mock_eval:
-                from agent.strategy.base import StrategyEvalResult, StrategySignal
+    with patch("backend.domain.strategy.engine.fetch_market_snapshot", AsyncMock(return_value=market)):
+        with patch("backend.domain.strategy.engine.execute_signal_pipeline", side_effect=_capture_pipeline):
+            with patch("backend.domain.strategy.engine.evaluate_strategy") as mock_eval:
+                from backend.domain.strategy.base import StrategyEvalResult, StrategySignal
 
                 mock_eval.return_value = StrategyEvalResult(
                     signal=StrategySignal(

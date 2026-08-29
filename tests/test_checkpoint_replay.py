@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.main import app
-from agent.storage.database import close_db, init_db
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
 
 
 @pytest.fixture
@@ -27,8 +27,8 @@ async def test_checkpoint_history_after_tick(client):
         "balance": {"free": {"USDT": 1000.0, "BTC": 0.001}},
     }
 
-    with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock()) as mock_analysis:
-        from agent.llm.schemas import AnalysisResult, TradeSignal
+    with patch("backend.application.graph.supervisor.run_analysis_agent", AsyncMock()) as mock_analysis:
+        from backend.domain.llm.schemas import AnalysisResult, TradeSignal
 
         mock_analysis.return_value = AnalysisResult(
             signal=TradeSignal(action="HOLD", symbol="BTCUSDT", confidence=0.5, reason="test"),

@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agent.graph.analysis_agent import apply_aggressive_nudge, should_auto_execute
-from agent.llm.analyzer import parse_trade_signal
-from agent.llm.schemas import TradeSignal
-from agent.main import app
-from agent.storage.database import close_db, init_db
+from backend.application.graph.analysis_agent import apply_aggressive_nudge, should_auto_execute
+from backend.domain.llm.analyzer import parse_trade_signal
+from backend.domain.llm.schemas import TradeSignal
+from backend.main import app
+from backend.infrastructure.storage.database import close_db, init_db
 
 
 @pytest.fixture
@@ -126,7 +126,7 @@ async def test_analysis_run_with_mock_llm(client):
         )()
     )
 
-    with patch("agent.api.routes.get_settings") as mock_cfg:
+    with patch("backend.interfaces.api.routes.get_settings") as mock_cfg:
         cfg = mock_cfg.return_value
         cfg.llm_configured = True
         cfg.llm_provider = "deepseek"
@@ -134,7 +134,7 @@ async def test_analysis_run_with_mock_llm(client):
         cfg.llm_auto_execute = True
         cfg.trade_symbol = "BTCUSDT"
 
-        with patch("agent.graph.analysis_agent.run_analysis_agent", mock_result):
+        with patch("backend.application.graph.analysis_agent.run_analysis_agent", mock_result):
             resp = await client.post(
                 "/api/v1/analysis/run",
                 json={

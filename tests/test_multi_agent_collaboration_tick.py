@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.config import Settings, clear_settings_cache
-from agent.graph.orchestrator import build_orchestrator_plan
-from agent.graph.state import TradeState
-from agent.graph.supervisor import run_agent_tick
-from agent.llm.schemas import AnalysisResult, TradeSignal
-from agent.storage.database import close_db, init_db
+from backend.config import Settings, clear_settings_cache
+from backend.application.graph.orchestrator import build_orchestrator_plan
+from backend.application.graph.state import TradeState
+from backend.application.graph.supervisor import run_agent_tick
+from backend.domain.llm.schemas import AnalysisResult, TradeSignal
+from backend.infrastructure.storage.database import close_db, init_db
 
 
 @pytest.fixture(autouse=True)
@@ -54,9 +54,9 @@ async def test_collaboration_tick_merge_hold():
         "klines_5m_closes": [64000.0, 64500.0, 65000.0, 65500.0, 66000.0] * 5,
     }
 
-    with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
+    with patch("backend.application.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
         with patch(
-            "agent.graph.strategy_agent.run_strategy_agent",
+            "backend.application.graph.strategy_agent.run_strategy_agent",
             AsyncMock(
                 return_value={
                     "agent": "strategy",
@@ -93,9 +93,9 @@ async def test_collaboration_tick_ai_wins_conflict():
         "balance": {"free": {"USDT": 1000.0}},
     }
 
-    with patch("agent.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
+    with patch("backend.application.graph.supervisor.run_analysis_agent", AsyncMock(return_value=mock_analysis)):
         with patch(
-            "agent.graph.strategy_agent.run_strategy_agent",
+            "backend.application.graph.strategy_agent.run_strategy_agent",
             AsyncMock(
                 return_value={
                     "agent": "strategy",
@@ -109,7 +109,7 @@ async def test_collaboration_tick_ai_wins_conflict():
                 }
             ),
         ):
-            with patch("agent.graph.risk_agent.run_risk_agent", AsyncMock(return_value={"risk_decision": {"approved": False}, "status": "risk_rejected"})):
+            with patch("backend.application.graph.risk_agent.run_risk_agent", AsyncMock(return_value={"risk_decision": {"approved": False}, "status": "risk_rejected"})):
                 result = await run_agent_tick(
                     market_data=market,
                     thread_id="m9-conflict",

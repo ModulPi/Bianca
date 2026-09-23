@@ -26,6 +26,11 @@ dev = [
     "httpx>=0.27",
 ]
 
+[project.scripts]
+# 数据面独立入口（ADR-017）。装在 PATH 上或不装都可以 —— 不装就用
+# `python -m agent.market`，两者是同一个 main()。
+bianca-market = "agent.market.__main__:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

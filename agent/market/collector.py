@@ -22,6 +22,7 @@ import websockets
 from agent.config import Settings, get_settings
 from agent.market.backfill import backfill_gaps, backfill_history
 from agent.market.bars import interval_ms, last_closed_bar_open, parse_ws_kline
+from agent.market.lock import CollectorLock, collector_lock_path
 from agent.market.repository import KlineRepository
 
 logger = logging.getLogger(__name__)
@@ -104,10 +105,17 @@ class MarketCollector:
             interval=self._settings.market_interval,
         )
         self._repo = KlineRepository()
+        # 单实例锁（ADR-017）：采集器可以住在 API 进程里，也可以独立成进程，
+        # 但同一个库同时只能有一个采集器在写。锁在这两条路径上统一生效。
+        self._lock = CollectorLock(collector_lock_path(self._settings.market_database_url))
 
     @property
     def running(self) -> bool:
         return self._snapshot.running
+
+    @property
+    def lock(self) -> CollectorLock:
+        return self._lock
 
     async def start(self) -> None:
         if self._snapshot.running:
@@ -117,10 +125,17 @@ class MarketCollector:
             raise RuntimeError("MARKET_SYMBOLS is empty")
         interval_ms(cfg.market_interval)  # 早失败：周期非法就别启动
 
-        self._stop_event.clear()
-        self._snapshot.running = True
-        self._snapshot.started_at = _now()
-        self._task = asyncio.create_task(self._loop(), name="bianca-market-collector")
+        # 校验都过了再抢锁，抢不到就抛 CollectorLockError（调用方决定怎么退）
+        self._lock.acquire()
+        try:
+            self._stop_event.clear()
+            self._snapshot.running = True
+            self._snapshot.started_at = _now()
+            self._task = asyncio.create_task(self._loop(), name="bianca-market-collector")
+        except BaseException:
+            self._lock.release()  # 没起来就别占着锁
+            self._snapshot.running = False
+            raise
         logger.info(
             "Market collector started (symbols=%s interval=%s)",
             cfg.market_symbol_list,
@@ -140,6 +155,7 @@ class MarketCollector:
         self._backfill_task = None
         self._snapshot.running = False
         self._snapshot.connected = False
+        self._lock.release()  # 停了就交还，好让下一个采集器（API 内或独立进程）能起
         logger.info("Market collector stopped")
 
     async def get_snapshot(self) -> CollectorSnapshot:

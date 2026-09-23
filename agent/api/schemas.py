@@ -9,7 +9,9 @@ class HealthResponse(BaseModel):
     llm_provider: str
     llm: str
     llm_detail: str | None = None
-    market: str = "disabled"
+    # ok / warming_up / error。没有 disabled：数据面停摆就是故障本身，
+    # 不存在"健康地不采数据"。默认值偏向大声失败。
+    market: str = "error"
     market_detail: str | None = None
 
 
@@ -164,20 +166,18 @@ class UsageSummaryResponse(BaseModel):
     total: UsageBucket
 
 
-class MarketStatusResponse(BaseModel):
-    """行情采集状态：采集器快照 + 库内事实。"""
+class MarketSessionResponse(BaseModel):
+    """**本进程**采集器的自述。本进程不是采集器时整个对象为 null。
 
-    collector_running: bool
+    单独成类型而不是平铺进 `MarketStatusResponse`，是为了让"这条事实只在采集器
+    所在的那个进程里成立"这件事写在类型上。采集器独立成进程后（ADR-017），
+    这些字段在 API 进程里恒为 false/null —— 平铺时会读成"采集器没在跑"。
+    """
+
     connected: bool
-    symbols: list[str]
-    interval: str
-    last_bar_open_time: int | None = None
-    last_closed_bar_open_time: int
-    lag_seconds: int | None = None
     bars_written_session: int = 0
-    bars_count_24h: int = 0
-    gap_count_24h: int = 0
     reconnects_session: int = 0
+    gaps_filled: int = 0
     last_gap_check_at: str | None = None
     backfill_running: bool = False
     backfill_last: dict | None = None
@@ -186,7 +186,35 @@ class MarketStatusResponse(BaseModel):
     last_error_at: str | None = None
     last_write_at: str | None = None
     started_at: str | None = None
+
+
+class MarketStatusResponse(BaseModel):
+    """行情数据面状态。
+
+    **顶层字段全部跨进程可信**（读的是行情库 + 内核锁），`session` 是本进程自述。
+    判断"数据在不在流"看 `data_flowing` / `lag_seconds`；判断"采集器进程在不在"
+    看 `collector_owner`。
+    """
+
     database: str
+    # 锁文件的绝对路径。暴露它是因为它由进程 CWD 解析 —— API 与计划任务的 CWD
+    # 不一致时会指着两个不同的锁文件，摆出来才看得出这种错配。
+    lock_file: str | None = None
+    symbols: list[str]
+    interval: str
+    interval_error: str | None = None
+    last_bar_open_time: int | None = None
+    last_closed_bar_open_time: int | None = None
+    lag_seconds: int | None = None
+    bars_count_24h: int = 0
+    bars_expected_24h: int | None = None
+    # 最近 24h 应有而未落库的 bar 数。注意方向：这是"缺了多少"，
+    # 而 session.gaps_filled 是"这个进程补了多少"，两者相反。
+    gap_count_24h: int | None = None
+    # self / other / none / unknown（unknown = 本平台问不出答案，如 POSIX 的劝告锁）
+    collector_owner: str
+    data_flowing: bool
+    session: MarketSessionResponse | None = None
 
 
 class BackfillResponse(BaseModel):

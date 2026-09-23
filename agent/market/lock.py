@@ -20,6 +20,11 @@ Windows 强制锁逼出来的：Windows 的字节范围锁对**任何**其他句
 线索本身不是权威状态。权威状态是"谁持有这个内核锁"，文件内容只是给人看的，
 读它不构成任何判断依据（进程可能在读到之前就退出，也可能还没把内容写进去）。
 
+**跨进程探活**：`probe_lock_path()` 让旁观者在不加锁的前提下问"现在有没有采集器"。
+这是"卡住但不死"这一类故障唯一能自动分辨的信号 —— 配合数据新鲜度，
+lag 在涨而锁被持有 = 进程活着但停滞（要人介入），lag 在涨而锁空闲 = 进程没了
+（计划任务会把它拉回来）。详见该函数的注释。
+
 一台机器上一个采集器只服务一个库；跨机器共享同一个 SQLite 文件本来就不成立
 （SQLite 不支持网络文件系统），所以本锁的粒度是"库文件"而非"机器"。
 """
@@ -31,6 +36,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy.engine import make_url
 
@@ -104,6 +110,75 @@ def _write_holder(fd: int) -> None:
         logger.debug("could not write lock holder info", exc_info=True)
 
 
+# 锁的跨进程状态。unknown 不是"没查到"，是"这台机器上问不出答案"（见 probe_lock_path）
+LockState = Literal["held", "free", "unknown"]
+
+
+def _probe_fd(fd: int) -> LockState:
+    """在已打开的 fd 上问"第 0 字节被锁了吗"，只读，不涉及加锁。"""
+    try:
+        os.lseek(fd, _LOCK_AT, os.SEEK_SET)
+        os.read(fd, 1)
+    except PermissionError:
+        # 读第 0 字节被拒。但**不能就此断定是锁** —— ACL、杀软、只读介质都会
+        # 给出同样的 PermissionError（CPython 经 CRT 拿到的只有 errno 13，
+        # winerror 是 None，区分不了）。第 1 字节是线索区，持锁时读得到，
+        # 用它把"被锁"和"整个文件读不了"分开。
+        try:
+            os.lseek(fd, _HINT_AT, os.SEEK_SET)
+            os.read(fd, 1)
+        except OSError:
+            return "unknown"
+        return "held"
+    except OSError:
+        return "unknown"
+    # 读成功即未被锁。空文件也走这里：os.read 返回 b"" 而不报错 ——
+    # 那是 os.open 与 _lock_fd 之间的一个极短窗口，算 free（真报 held 反而更坏）。
+    return "free"
+
+
+def probe_lock_path(path: Path | None) -> LockState:
+    """旁观者视角：现在有没有别的采集器持着这个库的锁。
+
+    与 `_read_holder()` 是**两件事**，别混用：`_read_holder` 从第 1 字节读线索，
+    持锁时永远成功，拿它当探针只会 100% 报"空闲"。本函数读的是第 0 字节。
+
+    只回答"有没有"，不回答"是谁"；而且只有 Windows 问得出答案 ——
+    POSIX 的 flock 是劝告锁，别人持锁时读照样成功，探不出来就是探不出来，
+    返回 unknown 而不是猜一个 free。本进程自己持锁时也别问：应当直接看
+    `CollectorLock.held`，同进程第二个句柄的读行为没有验证过，不必赌。
+    """
+    if path is None:
+        # 内存库没有可保护的共享状态，也就没有锁可探
+        return "unknown"
+    if os.name != "nt":
+        return "unknown"
+
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    except FileNotFoundError:
+        # 从没有采集器启动过，所以也没人建过锁文件
+        return "free"
+    except OSError:
+        return "unknown"
+    try:
+        return _probe_fd(fd)
+    finally:
+        # 漏一个 fd 就少一个句柄。注意异常是在 read 上抛的、不在 open 上，
+        # 所以 close 必须在 finally 里而不是跟在前一行后面。
+        os.close(fd)
+
+
+def probe_lock_state(database_url: str | None = None) -> LockState:
+    """`probe_lock_path` 的便捷入口：自己从库 URL 推锁文件路径。"""
+    try:
+        path = collector_lock_path(database_url)
+    except Exception:  # noqa: BLE001 — 探活失败不该带崩调用方
+        logger.debug("could not derive lock path", exc_info=True)
+        return "unknown"
+    return probe_lock_path(path)
+
+
 @dataclass
 class CollectorLock:
     path: Path | None
@@ -151,9 +226,23 @@ class CollectorLock:
         path = self.path
         try:
             os.close(self._fd)
+        except OSError:
+            # 已经关过了（或 fd 被别处抢走）。释放的语义是"之后不该再持有"，
+            # 这句失败不影响它。
+            logger.debug("closing lock fd failed", exc_info=True)
         finally:
             self._fd = None
         logger.debug("released collector lock %s", path)
+
+    def __del__(self) -> None:
+        """对象被回收时关掉句柄。
+
+        没有这一条时，`CollectorLock(path).acquire()` 这种不接住返回值的一次性写法
+        会留下一个**幽灵持有者**：句柄不关、锁不放，而对象已经不可达，谁都释放不了。
+        表现出来就是"有个采集器在跑"，而其实没有 —— 真正的采集器会被它挡在门外。
+        与这个模块其它地方同一个主题：静默的假状态比报错难查得多。
+        """
+        self.release()
 
     def __enter__(self) -> CollectorLock:
         self.acquire()

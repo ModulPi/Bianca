@@ -21,8 +21,18 @@ import websockets
 
 from agent.config import Settings, get_settings
 from agent.market.backfill import backfill_gaps, backfill_history
-from agent.market.bars import interval_ms, last_closed_bar_open, parse_ws_kline
-from agent.market.lock import CollectorLock, collector_lock_path
+from agent.market.bars import (
+    count_bars,
+    interval_ms,
+    last_closed_bar_open,
+    parse_ws_kline,
+)
+from agent.market.lock import (
+    CollectorLock,
+    LockState,
+    collector_lock_path,
+    probe_lock_state,
+)
 from agent.market.repository import KlineRepository
 
 logger = logging.getLogger(__name__)
@@ -87,6 +97,15 @@ class CollectorSnapshot:
     backfill_error: str | None = None
     last_error: str | None = None
     last_error_at: str | None = None
+
+    @property
+    def has_session(self) -> bool:
+        """这个采集器对象有没有"自述"可给：跑过（哪怕已经停了），或正在回补。
+
+        用它决定 `market_status_detail()` 的 `session` 是对象还是 null。`running`
+        不能担此任 —— 停机之后那些"这一程写了多少根/重连几次"正是最该看的时候。
+        """
+        return self.started_at is not None or self.backfill_running
 
 
 def _now() -> str:
@@ -269,82 +288,228 @@ class MarketCollector:
             self._snapshot.last_gap_check_at = _now()
 
 
-async def market_status_detail(
-    collector: MarketCollector, settings: Settings | None = None
-) -> dict[str, Any]:
-    """供 API 用的状态聚合：采集器快照 + 库内事实。"""
-    cfg = settings or get_settings()
-    snap = await collector.get_snapshot()
-    symbol = cfg.market_symbol_list[0] if cfg.market_symbol_list else ""
-    interval = cfg.market_interval
-
-    repo = KlineRepository()
-    last_bar = await repo.last_bar_time(symbol, interval)
-    now_ms = int(datetime.now(UTC).timestamp() * 1000)
-    lag_seconds: int | None = None
-    if last_bar is not None:
-        lag_seconds = max((now_ms - last_bar) // 1000 - interval_ms(interval) // 1000, 0)
-
-    day_ago = now_ms - 24 * 3_600_000
-    return {
-        "collector_running": snap.running,
-        "connected": snap.connected,
-        "symbols": snap.symbols,
-        "interval": snap.interval,
-        "last_bar_open_time": last_bar,
-        "last_closed_bar_open_time": last_closed_bar_open(now_ms, interval),
-        "lag_seconds": lag_seconds,
-        "bars_written_session": snap.bars_written,
-        "bars_count_24h": await repo.count_since(symbol, interval, day_ago),
-        "gap_count_24h": snap.gaps_filled,
-        "reconnects_session": snap.reconnects,
-        "last_gap_check_at": snap.last_gap_check_at,
-        "backfill_running": snap.backfill_running,
-        "backfill_last": snap.backfill_last,
-        "backfill_error": snap.backfill_error,
-        "last_error": snap.last_error,
-        "last_error_at": snap.last_error_at,
-        "last_write_at": snap.last_write_at,
-        "started_at": snap.started_at,
-        "database": _database_label(cfg.market_database_url),
-    }
-
-
 def _database_label(url: str) -> str:
     return url.rsplit("/", 1)[-1] if "/" in url else url
+
+
+def _lock_file_label(database_url: str) -> str | None:
+    """锁文件的**绝对**路径。
+
+    值得单独暴露：`collector_lock_path` 解析相对 URL 时用的是进程 CWD，而计划任务
+    带 `WorkingDirectory=repo_root`、API 未必 —— 两者 CWD 不同就会指着**两个不同的
+    锁文件**，于是探针报"空闲"而采集器其实在跑。把绝对路径摆出来，这种错配自己
+    就看得出来（顺带也是单实例锁本身的一个隐患）。
+    """
+    try:
+        path = collector_lock_path(database_url)
+    except Exception:  # noqa: BLE001 — 观测信息算不出来不该影响状态查询
+        logger.debug("could not derive lock path", exc_info=True)
+        return None
+    return str(path.resolve()) if path is not None else None
 
 
 # 采集器静默死亡是风险 #1：数据断流但无人知。超过这么多个周期没新 bar 即报 degraded。
 _STALE_LAG_S = 180
 
 
-async def market_health(
-    collector: MarketCollector | None = None, settings: Settings | None = None
-) -> tuple[str, str | None]:
+def _stale_after_s(step_s: int) -> int:
+    """把"落后几个周期算故障"换算成秒。
+
+    180s 是按 1m 定的。周期越长这个常数越离谱：`MARKET_INTERVAL=1h` 时每根之间
+    本来就隔 3600s，固定的 180s 会让它在每个小时里有约 94% 的时间报 error ——
+    一个天天喊狼来了的判据等于没有判据。所以取 max(180s, 3 个周期)。
+    """
+    return max(_STALE_LAG_S, 3 * step_s)
+
+
+def _flow_verdict(
+    *,
+    symbol: str,
+    interval: str,
+    step_s: int | None,
+    last_bar: int | None,
+    now_ms: int,
+    lock_state: LockState,
+) -> tuple[str, int | None, str]:
+    """数据面健不健康 —— **只看数据流动，不看进程归属**。
+
+    `/health` 与 `/market/status` 都由这里得出结论，否则两个面会互相矛盾。
+
+    可用的信道只有两条，都是跨进程读得到的：库（新不新鲜）和内核锁（有没有进程在）。
+    所以同一个判据在 API 进程里和采集器进程里得出同一个答案 —— 这正是它们以前
+    做不到的事。
+    """
+    if not symbol:
+        # 没有标的就没有订阅，采集器起不来，库永远是空的。但库空本身会被判成
+        # "冷启动"从而一直 warming_up，所以这条必须显式判死。
+        return "error", None, "MARKET_SYMBOLS 为空：没有订阅任何标的"
+    if step_s is None:
+        return "error", None, f"不支持的 K 线周期 {interval!r}"
+
+    if last_bar is None:
+        if lock_state == "free":
+            # 有正面证据：没人在写这个库，而且一根 bar 都没有
+            return "error", None, "库里没有任何 bar，且没有采集器在运行"
+        # 持锁 → 有采集器，只是历史回补还没落第一根；unknown → 问不出答案，
+        # 而"报故障"应当要求证据，所以按冷启动对待。
+        return "warming_up", None, "no bars yet (initial backfill in progress)"
+
+    lag_s = max((now_ms - last_bar) // 1000 - step_s, 0)
+    threshold = _stale_after_s(step_s)
+    if lag_s > threshold:
+        return "error", lag_s, f"stale: lag {lag_s}s > {threshold}s"
+    return "ok", lag_s, f"lag {lag_s}s"
+
+
+async def market_health(settings: Settings | None = None) -> tuple[str, str | None]:
     """给 /health 用的轻量探活（不跑 count_since，避免把健康检查变重）。
 
-    返回 (status, detail)。status ∈ ok / warming_up / disabled / error。
+    返回 (status, detail)。status ∈ ok / warming_up / error。
+
+    **不再有 `disabled`**，也不再接受 collector 参数：那两样都是在问"本进程是否
+    托管采集器"，而采集器现在住在独立进程里（ADR-017），这个问题的答案与数据面
+    的健康无关。历史上 `disabled` 还恰好把风险 #1 的告警静默掉了 ——
+    `MARKET_COLLECTOR_AUTOSTART=false` 之后它永远返回 disabled，而 overall 只在
+    `error` 时降级，于是采集器真的死了也不会响。
+
+    附带一句以免后人以为删掉的分支承重：原来的 `not snap.running` 从来没抓到过
+    `_loop` 的静默死亡 —— `snapshot.running` 只在 `stop()` 里清，循环崩了它仍是
+    True，真正兜住这种情况的一直是下面这个 lag 判据。
     """
     cfg = settings or get_settings()
-    if not cfg.market_collector_autostart:
-        return "disabled", None
-
-    collector = collector or get_collector()
-    snap = await collector.get_snapshot()
-    if not snap.running:
-        return "error", "collector not running"
-
     symbol = cfg.market_symbol_list[0] if cfg.market_symbol_list else ""
-    last_bar = await KlineRepository().last_bar_time(symbol, cfg.market_interval)
-    if last_bar is None:
-        # 冷启动：历史回补还没写入第一根，不算故障
-        return "warming_up", "no bars yet (initial backfill in progress)"
+    interval = cfg.market_interval
+    try:
+        step_s: int | None = interval_ms(interval) // 1000
+    except ValueError:
+        step_s = None
 
+    last_bar = None
+    if symbol and step_s is not None:
+        last_bar = await KlineRepository().last_bar_time(symbol, interval)
+
+    lock_state: LockState = probe_lock_state(cfg.market_database_url)
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
-    lag_s = max((now_ms - last_bar) // 1000 - interval_ms(cfg.market_interval) // 1000, 0)
-    if lag_s > _STALE_LAG_S:
-        return "error", f"stale: lag {lag_s}s > {_STALE_LAG_S}s"
-    return "ok", f"lag {lag_s}s"
+    verdict, _, detail = _flow_verdict(
+        symbol=symbol,
+        interval=interval,
+        step_s=step_s,
+        last_bar=last_bar,
+        now_ms=now_ms,
+        lock_state=lock_state,
+    )
+    return verdict, detail
+
+
+def _collector_owner(collector: MarketCollector, lock_state: LockState) -> str:
+    """谁在写这个库：self / other / none / unknown（最后一个 = 这台机器问不出来）。"""
+    lock = getattr(collector, "lock", None)
+    if lock is not None and getattr(lock, "held", False):
+        return "self"
+    return {"held": "other", "free": "none", "unknown": "unknown"}[lock_state]
+
+
+async def market_status_detail(
+    collector: MarketCollector, settings: Settings | None = None
+) -> dict[str, Any]:
+    """供 API / 独立入口用的状态聚合。
+
+    **分区原则：顶层只放跨进程可信的事实，进程内快照一律收进 `session`。**
+    这不是为了整齐。采集器独立成进程（ADR-017）之后，进程内字段在 API 进程里必然
+    是 false/null —— 而它们和跨进程字段平铺在一起时，读的人会得出"采集器没在跑"
+    这个错误结论（实测：数据在流、lag 9s，而 collector_running=false）。收进
+    `session` 并且在没有视角时给 `null`，是让这类谎报在结构上说不出口：
+    `null` 说的是"我没有这个视角"，而 `false` 说的是"它在跑但没连上"，两者不是
+    一回事。所以顶层的 key 集合有测试钉着 —— 新字段要放对地方。
+    """
+    cfg = settings or get_settings()
+    snap = await collector.get_snapshot()
+    symbols = cfg.market_symbol_list
+    symbol = symbols[0] if symbols else ""
+    interval = cfg.market_interval
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+
+    try:
+        step_s: int | None = interval_ms(interval) // 1000
+        interval_error: str | None = None
+    except ValueError as exc:
+        # 周期配错时宁可给出一个说得清的状态，也不要 500 —— 状态端点本身不该失联
+        step_s, interval_error = None, str(exc)
+
+    lock_state = probe_lock_state(cfg.market_database_url)
+    owner = _collector_owner(collector, lock_state)
+    own_lock = owner == "self"
+
+    repo = KlineRepository()
+    last_bar = (
+        await repo.last_bar_time(symbol, interval)
+        if (symbol and step_s is not None)
+        else None
+    )
+    verdict, lag_seconds, _ = _flow_verdict(
+        symbol=symbol,
+        interval=interval,
+        step_s=step_s,
+        last_bar=last_bar,
+        now_ms=now_ms,
+        lock_state="held" if own_lock else lock_state,
+    )
+
+    # 24h 缺口：窗口右端对齐到"最后一根已收盘 bar"，否则当下这根还没收盘的会被
+    # 算成缺口。expected 与 actual 用同一个窗口 —— 比较 two count 才有意义。
+    day_ago = now_ms - 24 * 3_600_000
+    bars_count_24h = 0
+    if symbol and step_s is not None:
+        bars_count_24h = await repo.count_since(symbol, interval, day_ago)
+    expected_24h = (
+        count_bars(day_ago, last_bar, interval)
+        if (last_bar is not None and step_s is not None)
+        else None
+    )
+    # 保留 max(...,0) 但对越窗回补不沉默：expected 一并给出，actual > expected
+    # 时读的人看得出来（那说明窗口里被补进了别的来源的行）。
+    gap_count_24h = (
+        max(expected_24h - bars_count_24h, 0) if expected_24h is not None else None
+    )
+
+    # 本进程有过采集器会话时才有"自述"（跑过或正在跑），否则这个视角不存在
+    session: dict[str, Any] | None = None
+    if snap.has_session:
+        session = {
+            "connected": snap.connected,
+            "bars_written_session": snap.bars_written,
+            "reconnects_session": snap.reconnects,
+            "gaps_filled": snap.gaps_filled,
+            "last_gap_check_at": snap.last_gap_check_at,
+            "backfill_running": snap.backfill_running,
+            "backfill_last": snap.backfill_last,
+            "backfill_error": snap.backfill_error,
+            "last_error": snap.last_error,
+            "last_error_at": snap.last_error_at,
+            "last_write_at": snap.last_write_at,
+            "started_at": snap.started_at,
+        }
+
+    return {
+        "database": _database_label(cfg.market_database_url),
+        "lock_file": _lock_file_label(cfg.market_database_url),
+        "symbols": symbols,
+        "interval": interval,
+        "interval_error": interval_error,
+        "last_bar_open_time": last_bar,
+        "last_closed_bar_open_time": (
+            last_closed_bar_open(now_ms, interval) if step_s is not None else None
+        ),
+        "lag_seconds": lag_seconds,
+        "bars_count_24h": bars_count_24h,
+        "bars_expected_24h": expected_24h,
+        "gap_count_24h": gap_count_24h,
+        "collector_owner": owner,
+        # bool 表达不了 ok/warming_up/error 三态：warming_up 映射为 false，
+        # 冷启动不该被消费方当成故障（/health 本来也不因 warming_up 转 degraded）。
+        "data_flowing": verdict == "ok",
+        "session": session,
+    }
 
 
 _collector: MarketCollector | None = None

@@ -173,8 +173,17 @@ def _cmd_status(args: argparse.Namespace, spec: MarketTaskSpec) -> int:
         text=True,
         errors="replace",
     )
+    keys = (
+        "data_flowing",
+        "collector_owner",
+        "lag_seconds",
+        "bars_count_24h",
+        "bars_expected_24h",
+        "gap_count_24h",
+        "last_bar_open_time",
+    )
     for line in (rc.stdout or "").splitlines():
-        if any(k in line for k in ("lag_seconds", "bars_count_24h", "gap_count_24h", "last_bar_open_time")):
+        if any(k in line for k in keys):
             print("  " + line.strip())
     return 0
 

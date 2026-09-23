@@ -8,9 +8,9 @@
 的单实例锁（`agent.market.lock`）会拦住后来者。以独立数据面方式运行时，API 进程
 应设 `MARKET_COLLECTOR_AUTOSTART=false`，否则两个进程会抢锁，谁赢是不确定的。
 
-**为什么状态行不用 `market_health()`**：那个函数把"采集器是否在跑"和
-`MARKET_COLLECTOR_AUTOSTART` 绑在一起 —— 独立运行时该开关是 false，它会一直
-报 disabled。这里直接读 `market_status_detail()`，只看事实。
+**关于状态行**：`market_health()` 现在也只看数据流动（不再和 `AUTOSTART` 绑），
+但这里仍然读 `market_status_detail()` —— 状态行要的是**事实**（连上没有、落后多少、
+回补在不在跑），不是一句健康结论；结论留给 `/health`。
 
 退出码：0 正常退出 / 1 配置或启动失败 / 3 已有采集器在跑（单实例锁）。
 """
@@ -67,22 +67,34 @@ def _configure_logging(level: str, log_file: str | None = None) -> None:
 
 
 def _status_line(detail: dict) -> str:
-    """一行状态。字段取事实，不取健康结论。"""
-    connected = "yes" if detail.get("connected") else "no "
+    """一行状态。字段取事实，不取健康结论。
+
+    跨进程字段在顶层，进程内字段在 `session` 里（见 `market_status_detail` 的分区
+    原则）。本进程没在做行情相关的事时 `session` 是 null —— 那时这些字段不是"没有"，
+    是"本进程没有这个视角"，所以打 `session=n/a` 而不是把它们当 false 报出去。
+    """
     lag = detail.get("lag_seconds")
     lag_s = "-" if lag is None else f"{float(lag):.0f}s"
-    backfill = "running" if detail.get("backfill_running") else "idle"
     parts = [
-        f"connected={connected}",
         f"lag={lag_s}",
         f"bars24h={detail.get('bars_count_24h')}",
         f"gaps24h={detail.get('gap_count_24h')}",
-        f"reconnects={detail.get('reconnects_session')}",
-        f"session_bars={detail.get('bars_written_session')}",
-        f"backfill={backfill}",
+        f"flowing={'yes' if detail.get('data_flowing') else 'no '}",
+        f"owner={detail.get('collector_owner')}",
     ]
-    if detail.get("last_error"):
-        parts.append(f"last_error={detail['last_error'][:80]!r}")
+    session = detail.get("session")
+    if session:
+        # 这个进程就是采集器：把只有它知道的事插进去
+        parts.insert(0, f"connected={'yes' if session.get('connected') else 'no '}")
+        parts.append(f"session_bars={session.get('bars_written_session')}")
+        parts.append(f"reconnects={session.get('reconnects_session')}")
+        parts.append(
+            f"backfill={'running' if session.get('backfill_running') else 'idle'}"
+        )
+        if session.get("last_error"):
+            parts.append(f"last_error={session['last_error'][:80]!r}")
+    else:
+        parts.append("session=n/a")
     return " ".join(parts)
 
 
@@ -146,15 +158,15 @@ async def _print_status_once(settings: Settings) -> int:
     finally:
         await close_market_db()
     print(json.dumps(detail, ensure_ascii=False, indent=2, default=str))
-    # 这份 JSON 里有一半字段读的是**本进程**的采集器快照。从外部进程看它们必然
-    # 是 false/null —— 包括 collector_running。实测过：线上采集器正在写（lag 24s），
-    # 但这条命令报 collector_running=false。不说明的话这是个会骗人的命令。
+    # 这条命令是**独立进程**，所以顶层字段（都是从库和内核锁读出来的）才是这里
+    # 该看的东西：`data_flowing`、`lag_seconds`、`collector_owner`。
+    # `session` 会是 null —— 那是"本进程没有采集器这个视角"，不是"采集器没在跑"。
     print(
-        "\n注意: 本进程没有采集器，因此 collector_running / connected / "
-        "bars_written_session / reconnects_session / last_write_at / started_at "
-        "必然为 false 或 null —— 它们取自进程内快照，跨进程读不到。\n"
-        "判断数据面是否在跑，看 DB 派生的字段: lag_seconds 小、last_bar_open_time "
-        "接近现在、bars_count_24h 满格，就说明有采集器在写（无论它在哪个进程里）。",
+        "\n说明: 本命令是独立进程，因此 session 通常为 null —— 它是**本进程**的自述，"
+        "而采集器住在别处。\n"
+        "判断数据面是否在跑，看顶层: data_flowing、lag_seconds 是否小、"
+        "last_bar_open_time 是否接近现在、collector_owner 是 self/other/none/unknown。\n"
+        "其中 collector_owner=other 表示另一个进程正在写（从内核锁只读探出来的）。",
         file=sys.stderr,
     )
     return EXIT_OK
@@ -223,8 +235,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--status-once",
         action="store_true",
         help="打印一份完整状态后立即退出（只读，不启动采集器）。"
-        "注意其中的 collector_running 等进程内字段跨进程必然为 false/null，"
-        "要看 lag_seconds 等 DB 派生字段",
+        "顶层字段（data_flowing / lag_seconds / collector_owner）跨进程可信；"
+        "session 是本进程自述，独立进程里为 null",
     )
     parser.add_argument("--log-level", default=None, help="默认取配置 LOG_LEVEL")
     parser.add_argument(

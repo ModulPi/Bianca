@@ -16,7 +16,13 @@ import pytest
 
 from agent.config import Settings
 from agent.market.collector import MarketCollector
-from agent.market.lock import CollectorLock, CollectorLockError, collector_lock_path
+from agent.market.lock import (
+    CollectorLock,
+    CollectorLockError,
+    _read_holder,
+    collector_lock_path,
+    probe_lock_path,
+)
 
 # ------------------------------------------------------------------ 路径推导
 
@@ -131,12 +137,12 @@ def test_lock_is_skipped_when_path_is_none():
     lock.release()
 
 
-def test_lock_released_when_holding_process_dies(tmp_path):
-    """内核锁的意义：进程死了锁自动没了，不存在"陈旧锁"要人工清理。
+def _hold_in_subprocess(path):
+    """让一个**真子进程**持锁，返回进程对象（已确认持上）。
 
-    用一个真的子进程去抢锁然后被杀掉，验证父进程随后能拿到。
+    用自己的进程测不出"旁观者"的视角：Windows 的字节范围锁对同进程的其他句柄
+    行为没有验证过，所以凡是要模拟"另一个进程在跑"的地方都用这个。
     """
-    path = tmp_path / "market.db.collector.lock"
     script = (
         "import sys, time;"
         f"sys.path.insert(0, {str(Path.cwd())!r});"
@@ -153,16 +159,30 @@ def test_lock_released_when_holding_process_dies(tmp_path):
         stdout=subprocess.PIPE,
         text=True,
     )
-    try:
-        assert proc.stdout is not None
-        assert proc.stdout.readline().strip() == "locked"
+    assert proc.stdout is not None
+    assert proc.stdout.readline().strip() == "locked"
+    return proc
 
+
+def _kill(proc) -> None:
+    if proc.poll() is None:
+        proc.kill()
+        proc.wait(timeout=30)
+
+
+def test_lock_released_when_holding_process_dies(tmp_path):
+    """内核锁的意义：进程死了锁自动没了，不存在"陈旧锁"要人工清理。
+
+    用一个真的子进程去抢锁然后被杀掉，验证父进程随后能拿到。
+    """
+    path = tmp_path / "market.db.collector.lock"
+    proc = _hold_in_subprocess(path)
+    try:
         blocked = CollectorLock(path)
         with pytest.raises(CollectorLockError):
             blocked.acquire()
 
-        proc.kill()
-        proc.wait(timeout=30)
+        _kill(proc)
 
         # 子进程已死 → 锁由内核释放，父进程可直接拿到，无需删文件
         after = CollectorLock(path)
@@ -172,9 +192,121 @@ def test_lock_released_when_holding_process_dies(tmp_path):
         finally:
             after.release()
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait(timeout=30)
+        _kill(proc)
+
+
+# ------------------------------------------------------------------ 跨进程探活
+#
+# probe_lock_path 是给旁观者用的只读探针：它回答"现在有没有采集器"，但不加锁。
+# 这是"卡住但不死"这类故障唯一能自动分辨的信号 —— 配合数据新鲜度，
+# lag 涨 + 锁被持有 = 进程活着但停滞（要人介入），lag 涨 + 锁空闲 = 进程没了
+# （计划任务会拉回来）。
+
+
+def test_probe_reports_free_when_no_lock_file_exists(tmp_path):
+    assert probe_lock_path(tmp_path / "never-created.lock") == "free"
+
+
+def test_probe_reports_free_for_an_empty_lock_file(tmp_path):
+    """空文件是 `os.open` 与 `_lock_fd` 之间的那个窗口，且读它不报错。
+
+    这种时候报 free 而不是 held —— 把"读到了但没内容"当成"被锁着"会凭空造出
+    一个不存在于文件系统的持有者。
+    """
+    path = tmp_path / "market.db.collector.lock"
+    path.write_bytes(b"")
+    assert probe_lock_path(path) == "free"
+
+
+def test_probe_reports_unknown_for_a_path_that_cannot_be_read(tmp_path):
+    """目录读不了 —— 但**不能**因此报 held。ACL、杀软、只读介质给的也是同一种
+    PermissionError，所以探针靠"第 1 字节读得到"来确认是锁，否则只能说不知道。"""
+    d = tmp_path / "adir"
+    d.mkdir()
+    assert probe_lock_path(d) == "unknown"
+
+
+def test_probe_reports_unknown_when_there_is_no_lock_at_all():
+    """内存库没有可保护的共享状态，也就没有锁可探。"""
+    assert probe_lock_path(None) == "unknown"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows 强制锁的专有行为")
+def test_probe_reports_held_while_another_process_holds_it(tmp_path):
+    path = tmp_path / "market.db.collector.lock"
+    proc = _hold_in_subprocess(path)
+    try:
+        assert probe_lock_path(path) == "held"
+    finally:
+        _kill(proc)
+    assert probe_lock_path(path) == "free"
+
+
+def test_probe_reads_the_same_held_file_that_defeats_read_holder(tmp_path):
+    """**别把 `_read_holder()` 当探针用**：它从第 1 字节读线索，持锁时永远成功，
+    拿它判活会 100% 报"空闲"。这条断言把两者的分工钉死：同一个持锁文件，
+    线索读得到，而探针说的是 held。"""
+    path = tmp_path / "market.db.collector.lock"
+    proc = _hold_in_subprocess(path)
+    try:
+        assert _read_holder(path).startswith("pid=")  # 线索读得到（这正是它的用途）
+        assert probe_lock_path(path) == "held"  # 而锁的状态是另一回事
+    finally:
+        _kill(proc)
+
+
+def test_probe_does_not_acquire_the_lock(tmp_path):
+    """探针必须是只读的 —— 它每次 /health 都跑。若它顺手加了锁，就会有把采集器
+    关在门外的窗口（采集器启动时拿不到锁 → 报"已有采集器在运行"）。"""
+    path = tmp_path / "market.db.collector.lock"
+    holder = CollectorLock(path)
+    holder.acquire()
+    holder.release()
+    path.write_bytes(b"")  # release 只关句柄，文件留着
+
+    assert probe_lock_path(path) == "free"
+    assert probe_lock_path(path) == "free"  # 探两次也不该把自己锁上
+
+    after_probe = CollectorLock(path)
+    after_probe.acquire()  # 探针跑完照样能拿到
+    try:
+        assert after_probe.held
+    finally:
+        after_probe.release()
+
+
+def test_probe_sees_a_lock_held_by_this_same_process(tmp_path):
+    """同进程持有的锁，旁观句柄也读不到第 0 字节 —— 探针因此报 held。
+
+    这本身是个"别自己探自己"的理由：`market_status_detail` 判断"是不是我在采"
+    用的是 `CollectorLock.held`，不走探针。
+    """
+    path = tmp_path / "market.db.collector.lock"
+    lock = CollectorLock(path)
+    lock.acquire()
+    try:
+        assert probe_lock_path(path) == "held"
+    finally:
+        lock.release()
+    assert probe_lock_path(path) == "free"
+
+
+def test_dropping_a_lock_object_closes_it(tmp_path):
+    """丢掉锁对象必须把句柄也放掉 —— 否则会留下一个"幽灵持有者"。
+
+    实测过的坑：`CollectorLock(path).acquire()` 这种一次性写法（没有变量接住）
+    在只有内核锁、没有 `__del__` 的版本里，句柄既不会关、锁也不会释放，
+    循环引用回收之前谁都拿不到锁 —— 看起来就是"有个采集器在跑"，而其实没有。
+    """
+    import gc
+
+    path = tmp_path / "market.db.collector.lock"
+    CollectorLock(path).acquire()  # 刻意不接住
+    gc.collect()
+    assert probe_lock_path(path) == "free"
+    fresh = CollectorLock(path)
+    fresh.acquire()  # 拿得到，说明幽灵已经放掉了
+    fresh.release()
 
 
 # ------------------------------------------------------------------ 采集器接线

@@ -6,12 +6,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from agent.config import Settings
-from agent.market import storage
+from agent.market import collector, storage
 from agent.market.bars import interval_ms
-from agent.market.collector import build_ws_url, market_health
+from agent.market.collector import (
+    CollectorSnapshot,
+    build_ws_url,
+    market_health,
+    market_status_detail,
+)
 from agent.market.repository import KlineRepository, SnapshotRepository
 
 MIN = 60_000
@@ -175,18 +182,27 @@ def test_build_ws_url_single_and_combined():
 
 
 # --------------------------------------------------------------- /health 探活
+#
+# 判定只看两条跨进程读得到的信道：库里的数据新不新鲜，以及内核锁在不在别人手里。
+# 这正是它以前做不到的事 —— 那时它问的是"本进程有没有采集器"，而采集器独立成
+# 进程（ADR-017）之后那个问题的答案恒为"没有"，于是告警被静默掉了。
 
 
-class _FakeCollector:
-    """只实现 market_health 用到的 get_snapshot()。"""
+def _settings(tmp_path, **over) -> Settings:
+    return Settings(
+        market_database_url=f"sqlite+aiosqlite:///{(tmp_path / 'market.db').as_posix()}",
+        **over,
+    )
 
-    def __init__(self, running: bool) -> None:
-        self._running = running
 
-    async def get_snapshot(self):
-        from agent.market.collector import CollectorSnapshot
+@pytest.fixture
+def lock_free(monkeypatch):
+    monkeypatch.setattr(collector, "probe_lock_state", lambda *a, **k: "free")
 
-        return CollectorSnapshot(running=self._running)
+
+@pytest.fixture
+def lock_held(monkeypatch):
+    monkeypatch.setattr(collector, "probe_lock_state", lambda *a, **k: "held")
 
 
 def _now_min_bar(offset_min: int = 0) -> dict:
@@ -197,37 +213,239 @@ def _now_min_bar(offset_min: int = 0) -> dict:
     return _row_at(now_min + offset_min * MIN)
 
 
-async def test_market_health_disabled_when_autostart_off(repo):
-    status, detail = await market_health(
-        _FakeCollector(True), Settings(market_collector_autostart=False)
-    )
-    assert status == "disabled"
-    assert detail is None
-
-
-async def test_market_health_error_when_collector_not_running(repo):
-    status, detail = await market_health(_FakeCollector(False), Settings())
-    assert status == "error"
-    assert detail == "collector not running"
-
-
-async def test_market_health_warming_up_when_db_empty(repo):
-    """冷启动历史回补尚未写入第一根时不应报 degraded。"""
-    status, detail = await market_health(_FakeCollector(True), Settings())
-    assert status == "warming_up"
-    assert detail is not None
-
-
-async def test_market_health_ok_with_recent_bar(repo):
+async def test_market_health_ok_with_recent_bar(repo, tmp_path, lock_free):
     await repo.insert_rows([_now_min_bar()])
-    status, detail = await market_health(_FakeCollector(True), Settings())
+    status, detail = await market_health(_settings(tmp_path))
     assert status == "ok", detail
     assert detail is not None and detail.startswith("lag ")
 
 
-async def test_market_health_error_when_lag_exceeds_threshold(repo):
+async def test_market_health_error_when_lag_exceeds_threshold(repo, tmp_path, lock_free):
     """采集器静默死亡（风险 #1）必须能从 /health 看出来。"""
     await repo.insert_rows([_now_min_bar(offset_min=-10)])  # 落后 10 分钟
-    status, detail = await market_health(_FakeCollector(True), Settings())
+    status, detail = await market_health(_settings(tmp_path))
     assert status == "error"
     assert detail is not None and detail.startswith("stale:")
+
+
+async def test_market_health_ignores_the_autostart_switch(repo, tmp_path, lock_free):
+    """**回归测试**：这个开关以前会让 /health 永远报 disabled，从而静默掉风险 #1。
+
+    采集器现在住在独立进程里，`MARKET_COLLECTOR_AUTOSTART=false` 是正常部署状态，
+    而数据在流 —— 它必须报 ok。
+    """
+    await repo.insert_rows([_now_min_bar()])
+    status, _ = await market_health(
+        _settings(tmp_path, market_collector_autostart=False)
+    )
+    assert status == "ok"
+
+
+async def test_market_health_warming_up_when_db_empty_and_someone_holds_the_lock(
+    repo, tmp_path, lock_held
+):
+    """冷启动历史回补尚未写入第一根时不应报 degraded。"""
+    status, detail = await market_health(_settings(tmp_path))
+    assert status == "warming_up"
+    assert detail is not None
+
+
+async def test_market_health_error_when_db_empty_and_nobody_is_collecting(
+    repo, tmp_path, lock_free
+):
+    """既没有数据、也没有采集器 —— 这是故障，不是冷启动。
+
+    锁探针给出的正面证据（锁空闲）就是这条判据的界限。
+    """
+    status, detail = await market_health(_settings(tmp_path))
+    assert status == "error"
+    assert detail is not None and "没有采集器" in detail
+
+
+async def test_market_health_unknown_lock_state_is_not_a_failure(
+    repo, tmp_path, monkeypatch
+):
+    """探不出锁状态时（如 POSIX 的劝告锁）按冷启动对待 —— 报故障应当要求证据。"""
+    monkeypatch.setattr(collector, "probe_lock_state", lambda *a, **k: "unknown")
+    status, _ = await market_health(_settings(tmp_path))
+    assert status == "warming_up"
+
+
+async def test_market_health_error_when_no_symbols_configured(repo, tmp_path, lock_held):
+    """空标的列表会让库永远是空的，从而一直判"冷启动" —— 必须显式判死。"""
+    status, detail = await market_health(_settings(tmp_path, market_symbols=""))
+    assert status == "error"
+    assert detail is not None and "MARKET_SYMBOLS" in detail
+
+
+async def test_stale_threshold_scales_with_the_interval(repo, tmp_path, lock_free):
+    """阈值必须随周期缩放，否则长周期下这个判据会天天喊狼来了。
+
+    2 小时前的数据在 1h 周期下是正常的（阈值 3 个周期 = 3h），但按写死的 180s
+    必然被误判为故障 —— 而那个常数正是这次改掉的东西。
+    """
+    hour_ago = _now_min_bar(offset_min=-120)
+    hour_ago["interval"] = "1h"
+    await repo.insert_rows([hour_ago])
+
+    status, detail = await market_health(_settings(tmp_path, market_interval="1h"))
+    assert status == "ok", detail
+
+    # 同样"落后 2 小时"的数据，按 1m 周期看就是故障（阈值 180s）
+    await repo.insert_rows([_now_min_bar(offset_min=-120)])
+    stale, _ = await market_health(_settings(tmp_path))
+    assert stale == "error"
+
+
+# ------------------------------------------------- /market/status 的进程内/跨进程分区
+#
+# 顶层只放跨进程可信的事实，进程内快照一律收进 session。这套测试守的就是那条界：
+# 采集器独立成进程（ADR-017）后，进程内字段在 API 进程里必然是 false/null，和
+# 跨进程字段平铺在一起就会被读成"采集器没在跑"（实测：数据在流、lag 9s，而
+# collector_running=false）。
+
+#: 顶层允许出现的 key。**加新字段必须想清楚它属于哪一侧** ——
+#: 如果它读的是本进程的 snapshot，它就该进 session。
+_CROSS_PROCESS_KEYS = {
+    "database",
+    "lock_file",
+    "symbols",
+    "interval",
+    "interval_error",
+    "last_bar_open_time",
+    "last_closed_bar_open_time",
+    "lag_seconds",
+    "bars_count_24h",
+    "bars_expected_24h",
+    "gap_count_24h",
+    "collector_owner",
+    "data_flowing",
+    "session",
+}
+
+
+class _FakeCollector:
+    """只实现 market_status_detail 用到的 get_snapshot()（以及可选的 lock）。"""
+
+    def __init__(self, snap: CollectorSnapshot | None = None, lock=None) -> None:
+        self._snap = snap or CollectorSnapshot()
+        if lock is not None:
+            self.lock = lock
+
+    async def get_snapshot(self) -> CollectorSnapshot:
+        return self._snap
+
+
+class _FakeLock:
+    def __init__(self, held: bool) -> None:
+        self.held = held
+
+
+async def test_status_top_level_carries_no_in_process_fields(repo, tmp_path, lock_free):
+    """按 key 集合钉住分区 —— 防止谎报换一个新名字回到顶层。"""
+    detail = await market_status_detail(_FakeCollector(), _settings(tmp_path))
+    assert set(detail) == _CROSS_PROCESS_KEYS
+
+
+async def test_status_session_is_null_when_this_process_is_not_the_collector(
+    repo, tmp_path, lock_free
+):
+    """API 进程没托管采集器时，`session` 是 null —— 说的是"我没有这个视角"。
+
+    这个 null 与"采集器没在跑"是两回事：顶层 `data_flowing` / `collector_owner`
+    才是回答后者的地方。
+    """
+    await repo.insert_rows([_now_min_bar()])
+    detail = await market_status_detail(_FakeCollector(), _settings(tmp_path))
+    assert detail["session"] is None
+    assert detail["data_flowing"] is True
+    assert detail["collector_owner"] == "none"
+
+
+async def test_status_session_present_once_the_collector_has_run(repo, tmp_path, lock_free):
+    """跑过就该有自述 —— 哪怕此刻已停：停机之后"这一程写了几根"正是最该看的时候。"""
+    snap = CollectorSnapshot(started_at="2026-09-24T00:00:00+00:00", connected=True)
+    detail = await market_status_detail(_FakeCollector(snap), _settings(tmp_path))
+    session = detail["session"]
+    assert session is not None
+    assert session["connected"] is True
+
+
+async def test_status_reports_self_as_owner_when_this_process_holds_the_lock(
+    repo, tmp_path, lock_free  # noqa: ARG001 — 刻意让探针报 free，看 self 是否优先
+):
+    """本进程持锁时**不走探针**：同进程第二个句柄的读行为没验证过，不必赌。"""
+    await repo.insert_rows([_now_min_bar()])
+    detail = await market_status_detail(
+        _FakeCollector(lock=_FakeLock(True)), _settings(tmp_path)
+    )
+    assert detail["collector_owner"] == "self"
+    assert detail["data_flowing"] is True
+
+
+async def test_status_reports_other_when_another_process_holds_the_lock(
+    repo, tmp_path, lock_held
+):
+    detail = await market_status_detail(_FakeCollector(), _settings(tmp_path))
+    assert detail["collector_owner"] == "other"
+
+
+async def test_status_reports_unknown_where_the_lock_cannot_be_probed(
+    repo, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(collector, "probe_lock_state", lambda *a, **k: "unknown")
+    detail = await market_status_detail(_FakeCollector(), _settings(tmp_path))
+    assert detail["collector_owner"] == "unknown"
+
+
+async def test_status_exposes_the_absolute_lock_path(repo, tmp_path, lock_free):
+    """锁路径由进程 CWD 解析 —— 摆出绝对路径，CWD 错配才看得出来。"""
+    detail = await market_status_detail(_FakeCollector(), _settings(tmp_path))
+    assert detail["lock_file"] is not None
+    assert detail["lock_file"].endswith("market.db.collector.lock")
+
+
+async def test_status_gap_count_is_zero_for_a_contiguous_window(repo, tmp_path, lock_free):
+    """铺满窗口时缺口必须是 0 —— 期望值多算一根都会在这里露馅。
+
+    同时这条钉住 24h 窗口是**闭区间**：`[现在-24h, 最后一根]` 在整分钟边界上
+    含 1441 个 1m 点。铺 1450 根覆盖得住，不至于因为跑测试的毫秒差而抖动。
+    """
+    now_ms = int(datetime.now(UTC).timestamp() * 1000) // MIN * MIN
+    await repo.insert_rows([_row_at(now_ms - i * MIN) for i in range(1450)])
+    detail = await market_status_detail(_FakeCollector(), _settings(tmp_path))
+    assert detail["bars_count_24h"] >= 1440
+    assert detail["gap_count_24h"] == 0
+
+
+async def test_status_gap_count_means_missing_not_filled(repo, tmp_path, lock_free):
+    """**回归测试**：`gap_count_24h` 以前取的是 `snap.gaps_filled`。
+
+    它既不是 24h 口径也不是跨进程口径，但文档把它列在"DB 派生字段"里，而阶段一
+    验收「连续运行 24h，gap_count_24h 补齐至 0」正是读它 —— 于是那条验收可以空洞
+    通过（API 进程里它恒为 0）。现在它是"应有而未落库"，由库算出，方向与
+    `session.gaps_filled`（本进程补了多少）相反。
+    """
+    await repo.insert_rows([_now_min_bar(), _now_min_bar(-1), _now_min_bar(-3)])  # 缺 -2
+    snap = CollectorSnapshot(
+        started_at="2026-09-24T00:00:00+00:00", gaps_filled=999
+    )
+    detail = await market_status_detail(_FakeCollector(snap), _settings(tmp_path))
+
+    assert detail["bars_count_24h"] == 3
+    assert detail["bars_expected_24h"] > detail["bars_count_24h"]
+    assert detail["gap_count_24h"] == detail["bars_expected_24h"] - 3
+    assert detail["gap_count_24h"] > 0
+    # 旧的（错误的）来源不再是这个字段的取值
+    assert detail["session"]["gaps_filled"] == 999
+
+
+async def test_status_never_500s_on_an_unsupported_interval(repo, tmp_path, lock_free):
+    """周期配错时给一个说得清的状态，而不是让状态端点自己失联。"""
+    detail = await market_status_detail(
+        _FakeCollector(), _settings(tmp_path, market_interval="7m")
+    )
+    assert detail["interval_error"] is not None
+    assert detail["lag_seconds"] is None
+    assert detail["data_flowing"] is False
+    assert detail["last_closed_bar_open_time"] is None

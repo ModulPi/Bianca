@@ -76,13 +76,22 @@ async def main() -> int:
     print(f"  stop() took {stop_ms:.0f} ms")
     print(f"  status queried at {_iso(status_ms)} ({status_ms})")
 
-    print("\n--- status ---")
+    print("\n--- status（顶层 = 跨进程事实）---")
     for key in (
         "last_bar_open_time", "last_closed_bar_open_time", "lag_seconds",
-        "bars_written_session", "bars_count_24h", "gap_count_24h",
-        "reconnects_session", "last_error", "database",
+        "bars_count_24h", "bars_expected_24h", "gap_count_24h",
+        "collector_owner", "data_flowing", "database",
     ):
         print(f"  {key} = {detail[key]}")
+
+    # 进程内字段在 session 里。本脚本自己就是采集器，所以它必然非 null。
+    session = detail["session"]
+    print("\n--- session（本进程采集器的自述）---")
+    if session is None:
+        print("  null —— 本进程没有采集器会话，下面的检查无从谈起")
+        return 1
+    for key in ("connected", "bars_written_session", "reconnects_session", "last_error"):
+        print(f"  {key} = {session[key]}")
 
     print("\n--- checks ---")
     rows_added = after - before
@@ -107,10 +116,10 @@ async def main() -> int:
     else:
         print(f"OK   last_bar 对齐 {interval} 边界")
 
-    if detail["reconnects_session"]:
-        print(f"NOTE 本次发生 {detail['reconnects_session']} 次重连（退避已生效，不算失败）")
-    if detail["last_error"]:
-        print(f"NOTE last_error = {detail['last_error']}")
+    if session["reconnects_session"]:
+        print(f"NOTE 本次发生 {session['reconnects_session']} 次重连（退避已生效，不算失败）")
+    if session["last_error"]:
+        print(f"NOTE last_error = {session['last_error']}")
 
     await close_market_db()
     print("\nRESULT:", "PASS" if ok else "FAIL")

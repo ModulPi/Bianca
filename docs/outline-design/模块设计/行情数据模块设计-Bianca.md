@@ -1,8 +1,8 @@
 
 # Bianca — 行情数据模块设计文档
 
-> 版本：v0.5 | 日期：2026-09-23 | 模块代号：Market Data | 阶段：PoC 延伸
-> 状态：**阶段一代码已落地并实测**（§6.1）；阶段一验收 9 项中 5 项通过、2 项部分验证、2 项未验（§8），另有 3 项因"数据层独立"要求新增（§8 追加，其中 2 项已达成、1 项部分达成）。v0.4：全量历史回补完成（4,778,552 行 / 809.2 MB / 覆盖率 99.8197%），修回补并发统计丢失更新，容量估算按实测行宽修正。v0.5：ADR-010 标记为与产品要求冲突，新增提案 ADR-017「数据面作为独立运行单元」；上位架构文档的缺口已定位（§9.2）。v0.6：ADR-017 缺口 1 落地 —— 数据面有了独立入口（`python -m agent.market`）与单实例锁，10 项实测全 PASS；同时实测确认跨进程观测不可用（缺口 4 不只是"端点归属"，是"读不到"）。**v0.7（2026-09-24）：ADR-017 缺口 2 落地 —— 进程守护用「重复唤醒 + `IgnoreNew`」实现（Windows 计划任务），三项实测全 PASS；实现期实测暴露计划任务两个"注册成功但不生效"的静默陷阱（§6.1 纠正 #5），并记录一个未解盲区：卡住但不死的采集器不会被救回**
+> 版本：v0.8 | 日期：2026-09-24 | 模块代号：Market Data | 阶段：PoC 延伸
+> 状态：**阶段一代码已落地并实测**（§6.1）；阶段一验收 9 项中 6 项通过、2 项部分验证、1 项未验（§8，其中 24h 连续运行已由用户明确推迟），另有 3 项因"数据层独立"要求新增（§8 追加，其中 2 项已达成、1 项部分达成）。v0.4：全量历史回补完成（4,778,552 行 / 809.2 MB / 覆盖率 99.8197%），修回补并发统计丢失更新，容量估算按实测行宽修正。v0.5：ADR-010 标记为与产品要求冲突，新增提案 ADR-017「数据面作为独立运行单元」；上位架构文档的缺口已定位（§9.2）。v0.6：ADR-017 缺口 1 落地 —— 数据面有了独立入口（`python -m agent.market`）与单实例锁，10 项实测全 PASS；同时实测确认跨进程观测不可用（缺口 4 不只是"端点归属"，是"读不到"）。v0.7：ADR-017 缺口 2 落地 —— 进程守护用「重复唤醒 + `IgnoreNew`」实现（Windows 计划任务），三项实测全 PASS；实现期实测暴露计划任务两个"注册成功但不生效"的静默陷阱（§6.1 纠正 #5），并记录一个未解盲区：卡住但不死的采集器不会被救回。**v0.8（2026-09-24）：止住观测面的跨进程谎报 —— `/health` 与 `/market/status` 重排为「顶层只放跨进程事实 + `session` 装进程内快照」，新增只读锁探针区分"进程没了"与"活着但停滞"，`gap_count_24h` 从"本进程补齐数"更正为"库里缺了多少"（旧口径让一条阶段一验收可以空洞通过）。线上实测：风险 #1 的告警**首次真的响**（§6.1 #31、纠正 #6）**
 > 技术前提已实测验证（见 §6），实现期结论见 §6.1
 > 关联：[PRD v0.4](../../PRD-Bianca.md) · [架构设计 v0.4](../架构设计/架构设计文档-Bianca.md) · [数据库设计 v0.3](../数据库设计/数据库设计文档-Bianca.md)
 
@@ -196,25 +196,38 @@ async def get_market_context(
 
 **最大风险故障模式是采集器静默死亡。** 必须让它自己喊出来。
 
-新增 `GET /api/v1/market/status`，沿用 `/api/agent/status` + `RunnerSnapshot` 风格（实际实现字段，`MarketStatusResponse`）：
+新增 `GET /api/v1/market/status`，沿用 `/api/agent/status` + `RunnerSnapshot` 风格（实际实现字段，`MarketStatusResponse`）。
 
-| 字段 | 含义 |
-|------|------|
-| `collector_running` / `connected` | 采集任务是否存活 / WS 是否处于连接态 |
-| `last_bar_open_time` | 最后落库的 bar 时间 |
-| `last_closed_bar_open_time` | **此刻**最近一根已收盘 bar — 与上一行对比即可看出是否落后 |
-| `lag_seconds` | `now - last_bar_open_time - interval`，**核心健康指标** |
-| `bars_written_session` | 本进程内写入行数 |
-| `bars_count_24h` | 24h 已落库行数（从库算，非计数器，重启不失真）|
-| `gap_count_24h` | 本进程内补齐的缺口 bar 数 |
-| `reconnects_session` | 本进程内 WS 重连次数（多连接后按连接维度统计）|
-| `backfill_running` / `backfill_last` / `backfill_error` | 历史回补进度与结果 |
-| `last_gap_check_at` / `last_write_at` / `last_error` / `last_error_at` | 时序诊断 |
-| `database` | 库文件名（确认没连错库）|
+**分区原则（2026-09-24 起）：顶层只放跨进程可信的事实，进程内快照一律收进 `session`。** 采集器独立成进程后（ADR-017），进程内字段在 API 进程里必然是 `false`/`null`，与跨进程字段平铺在一起就会被读成"采集器没在跑"—— 实测过：数据在流、`lag 9s`，而 `collector_running=false`。收进 `session` 且在没有视角时给 `null`，是让这类谎报在结构上说不出口（`null` 说"我没有这个视角"，`false` 说"它在跑但没连上"，不是一回事）。
+
+| 字段 | 含义 | 读取面 |
+|------|------|--------|
+| `last_bar_open_time` | 最后落库的 bar 时间 | 库 |
+| `last_closed_bar_open_time` | **此刻**最近一根已收盘 bar — 与上一行对比即可看出是否落后 | 库 |
+| `lag_seconds` | `now - last_bar_open_time - interval`，**核心健康指标** | 库 |
+| `bars_count_24h` | 24h 已落库行数（从库算，非计数器，重启不失真）| 库 |
+| `bars_expected_24h` | 同窗口**应有**行数。与上一行并列给出，是为了让 `actual > expected` 这种异常看得见，而不是被子句 `max(…,0)` 吃掉 | 库 |
+| `gap_count_24h` | 24h **应有而未落库**的 bar 数（缺口方向：越大越坏）| 库 |
+| `data_flowing` | `lag` 未超阈（即 `ok`）。`warming_up` 映射为 `false` —— bool 表达不了三态 | 库 |
+| `collector_owner` | `self` / `other` / `none` / `unknown` —— 谁在写这个库（见下）| 内核锁 |
+| `lock_file` | 锁文件的**绝对**路径。它由进程 CWD 解析，API 与计划任务 CWD 不一致时会指着两个不同文件，摆出来才看得出错配 | 配置 |
+| `database` / `symbols` / `interval` / `interval_error` | 库文件名（确认没连错库）、订阅标的、周期及其配置错误 | 配置 |
+| `session` | **本进程**采集器的自述，本进程没有采集器会话时为 `null` | 进程内 |
+| └ `connected` | WS 是否处于连接态 | 进程内 |
+| └ `bars_written_session` / `reconnects_session` / `gaps_filled` | 本进程内写入行数 / WS 重连次数 / **补齐**的缺口 bar 数（方向与 `gap_count_24h` 相反）| 进程内 |
+| └ `backfill_running` / `backfill_last` / `backfill_error` | 本进程发起的历史回补进度与结果 | 进程内 |
+| └ `last_gap_check_at` / `last_write_at` / `last_error` / `last_error_at` / `started_at` | 时序诊断 | 进程内 |
+
+`collector_owner` 是**只读探测锁文件**得出的：Windows 上别的进程持锁时读第 0 字节会抛 `PermissionError`（本机子代理实测确认，含"读 0 失败但读 1 成功"的双重确认以免把 ACL 误判成锁），不涉及加锁、无竞态。它把两类以前分不开的故障分开了：
+
+- `lag` 在涨 + `owner=none` → 进程没了，计划任务会在下一次心跳把它拉回来；
+- `lag` 在涨 + `owner=other` → 进程活着但停滞（**这正是守护机制的已知盲区**，需要人介入）。
+
+POSIX 的 `flock` 是劝告锁，探测不出结果，那里返回 `unknown` —— 只影响能否把故障分得更细，不会产生误报（见下）。
 
 配套 `POST /api/v1/market/backfill` 手动触发历史回补（幂等可重入，已在跑则直接返回）。
 
-`lag_seconds` 超过 3 个 bar 周期（180s，`collector._STALE_LAG_S`）时，`/health` 的 `market` 字段标记为 `error` → 整体 `degraded`。冷启动首根 bar 落库前返回 `warming_up`，不算故障。
+**健康判定**：`/health` 的 `market` 只在两件事上取值 —— 库里的数据新不新鲜，以及内核锁在不在别人手里，**不看进程归属**（可用的信道只有这两条是跨进程读得到的）。`lag_seconds` 超过 `max(180s, 3 个周期)` 时为 `error` → 整体 `degraded`；库里没有任何 bar 时，**持锁**判 `warming_up`（冷启动回补中），**锁空闲**判 `error`（既没有数据也没有采集器）。阈值随周期缩放：写死 180s 在 `MARKET_INTERVAL=1h` 下会在每小时约 94% 的时间里误报。没有 `disabled` 这个状态 —— 数据面停摆就是风险 #1 本身，不存在"健康地不采数据"。
 
 ---
 
@@ -312,7 +325,7 @@ async def get_market_context(
 | `MARKET_BACKFILL_START` | `2017-08-17` | 历史回补起点（ADR-014）|
 | `MARKET_BACKFILL_ON_START` | `true` | 启动时后台回补全历史（不阻塞服务启动）|
 | `MARKET_BACKFILL_CONCURRENCY` | `5` | 回补并发分片数（1–20）|
-| `MARKET_COLLECTOR_AUTOSTART` | `true` | lifespan 中自动启动采集器 |
+| `MARKET_COLLECTOR_AUTOSTART` | `true` | lifespan 中是否自动启动**进程内**采集器。**2026-09-24 起它不再是 `/health` 的判定依据** —— 原先它一置 false，`market_health()` 就短路成 `disabled`，而 `/health` 只在 `error` 时转 `degraded`，于是告警静默失效（§6.1 纠正 #6）。数据面迁到独立进程后线上取值 `false`（否则会出现两个采集器抢锁），"在不在采"改由库与内核锁回答 |
 
 代理不新增变量：统一复用 `BINANCE_PROXY`（`Settings.market_proxy`），不做直连/代理双路径（ADR-009 不变量 5）。
 
@@ -388,14 +401,17 @@ async def get_market_context(
 - **状态:** 🔶 **部分实施中（2026-09-24）** | **日期:** 2026-09-23（2026-09-24 更新）
   - 缺口 1（独立入口）**已解**：`python -m agent.market` / `[project.scripts] bianca-market`，附单实例锁 `agent/market/lock.py` 与验收脚本 `scripts/verify_market_standalone.py`（10 项全 PASS）。
   - 缺口 2（进程守护）**已解（2026-09-24）**：`agent/market/task.py` 生成 Windows 计划任务描述符（重复唤醒 + `IgnoreNew`，非 `RestartOnFailure`），`scripts/install_market_task.py` 注册/卸载/查状态，验收脚本 `scripts/verify_market_supervision.py` 三项全 PASS（拉起并落库 / 防重 / 硬杀后下一次心跳复活并续写）。**该机制的两处实测陷阱见 §6.1 纠正 #5。**
-  - 供数接口、观测面解耦、部署形态（缺口 3/4/核心待决）均未动。
+  - 缺口 4（观测面耦合）**部分已解（2026-09-24）**：谎报止住了 —— 两个观测端点现在只回答"数据在流吗"，进程内快照收进 `session` 且无视角时给 `null`，`/health` 的 `disabled` 短路拆除（详见 §2.7）。**仍耦合**：端点依旧挂在 API 的 router 上，独立的数据面进程不提供任何端点。
+  - 供数接口、部署形态（缺口 3/核心待决）均未动。
   - **遗留的守护盲区（未解）**：重复唤醒按"任务还在不在"判死活，采集器**活着但卡住**（WS 静默停滞、不再落库）时任务仍算在跑，唤醒被 `IgnoreNew` 吞掉。覆盖它需要另一个独立心跳（例如库内 `max(time)` 的年龄），见 §8 该项的 `[~]` 说明。
 - **背景:** 产品要求「数据层后期必须做成独立模块、自动化运行，而不是依赖 agent。数据层与 agent 决策层不要混为一谈」。ADR-007 已实现**逻辑**分离（代码依赖方向干净：`agent/market/` 只依赖 `agent.config`，不碰 `llm`/`graph`/`risk`，已实测验证），但 ADR-010 选择了同进程 → **运行期与部署期仍是耦合的**。
 - **当前实测缺口（四条，均须先解）:**
   1. ~~**无独立入口**~~ —— **已解（2026-09-23）**：`agent/market/__main__.py` + `[project.scripts]`。附带引入单实例锁，因为独立入口一开，"API 内的采集器"和"独立进程的采集器"就可能同时存在；
   2. ~~**无进程守护**~~ —— **已解（2026-09-24）**：Windows 计划任务（`agent/market/task.py` + `scripts/install_market_task.py`），机制为「每 5 分钟重复唤醒 + `MultipleInstancesPolicy=IgnoreNew`」。原先"四种自启机制全空"的实测结论仍成立 —— 它说明**当时确实无人守护**，也是这条必须补的理由；
   3. **部署形态是单服务** —— 架构文档 §2 容器图与系统设计文档 §6 `docker-compose.yml` 都只有 `api` 一个服务，没有数据面进程；
-  4. **观测面耦合** —— `/api/v1/market/status`、`/api/v1/market/backfill` 挂在 API 的 router 上，数据面独立后这些端点的归属需要重新设计。**2026-09-23 实测确认这不只是"归属问题"，而是"读不到"**：`market_status_detail()` 的 `collector_running` / `connected` / `bars_written_session` / `reconnects_session` / `last_write_at` / `started_at` 全部取自**进程内**快照，跨进程必然是 `false`/`null`。实证：线上采集器正在写（`lag_seconds=24`），而独立进程执行 `--status-once` 报 `collector_running=false`。跨进程唯一可信的是 DB 派生字段（`lag_seconds` / `last_bar_open_time` / `bars_count_24h` / `gap_count_24h`）—— 这实际上**替供数接口形态给出了一个证据**：跨进程观测天然要落在库上，倾向方案 (a) 与此一致。
+  4. **观测面耦合** —— `/api/v1/market/status`、`/api/v1/market/backfill` 挂在 API 的 router 上，数据面独立后这些端点的归属需要重新设计。**2026-09-23 实测确认这不只是"归属问题"，而是"读不到"**：`market_status_detail()` 里共 **15 个字段**取自**进程内**快照（`collector_running` / `connected` / `bars_written_session` / `reconnects_session` / `last_write_at` / `started_at` 等），跨进程必然是 `false`/`null`。实证：线上采集器正在写（`lag_seconds=24`），而独立进程执行 `--status-once` 报 `collector_running=false`。**2026-09-24 已按此重排**（本 ADR 的缺口 4 从"未动"变"部分已解"）：顶层只留跨进程读得到的字段，进程内快照整体收进 `session`，本进程没有采集器会话时给 `null` —— 剩下**仍耦合**的是端点归属（数据面自己不开端点）。
+     **该条同时更正了一个当时的错误说法**：原文把 `gap_count_24h` 与 `lag_seconds` / `last_bar_open_time` / `bars_count_24h` 并列称为"DB 派生字段"，但它当时取的是 `snap.gaps_filled`（本进程**补齐**的缺口数）—— 既不是 DB 派生，也不是 24h 口径，而且方向与原意相反。已改为真从库里算：`count_bars(窗口起点, 最后一根已收盘 bar) - count_since(窗口起点)`，即"**缺了多少**"。
+     跨进程可用的信道只有两条 —— **库**（数据流动）与**内核锁**（进程归属），所以观测天然要落在他们身上，这**替供数接口形态给出了一个证据**：倾向方案 (a) 与此一致。
 - **核心待决问题：供数接口的形态。** ADR-007 定的"单一供数接口"`get_market_context()` 目前是**同进程函数调用**，这只有在同进程下成立。跨进程后必须二选一：
   - **(a) 共享库直读** —— 控制面以只读方式打开 `data/market.db`（WAL 支持多读者），数据面与控制面之间**无运行时接口**。耦合最低，且天然满足"离线可跑、独立观测"。
   - **(b) IPC / HTTP 端点** —— 数据面自带服务端点，控制面按客户端消费。语义更清晰、可跨机，但引入网络边界与新的失败模式。
@@ -459,8 +475,8 @@ async def get_market_context(
 | 18 | 重连补缺口 | ✅ 冷启动 `gaps_filled=2881`（补齐 2 天 lookback 全窗口）；后续每次启动补上"上一次停机时撞掉的边界 bar"（`gaps_filled` 2 / 3）|
 | 19 | 断点续传基点 | ✅ 库内已是最新时 `backfill_history` 返回 `requests=0 / ranges=0`，直接短路 |
 | 20 | 停机干净 | ✅ `stop()` 耗时 1.36s（含 WS 关闭握手），无异常、无 teardown 噪声 |
-| 21 | `/api/v1/market/status` | ✅ 实机返回 `lag_seconds=4`、`connected=true`、`database=market.db` |
-| 22 | `/api/v1/health` 接入 | ✅ `market: "ok" / market_detail: "lag 40s"`；采集器停跑或落后 >180s → `degraded` |
+| 21 | `/api/v1/market/status` | ✅ 实机返回 `lag_seconds=4`、`database=market.db`（当时 `connected=true` 是**同进程**读到的 —— 迁移到独立进程后该字段移入 `session`，见 #31）|
+| 22 | `/api/v1/health` 接入 | ✅ `market: "ok" / market_detail: "lag 40s"`（当时的"采集器停跑 → `degraded`"是靠 `MARKET_COLLECTOR_AUTOSTART` 短路假装的，迁移后失效并已拆除，见 #31）|
 | 23 | WAL 生效 | ✅ 运行期 `market.db-wal` / `-shm` 存在（ADR-008 前提成立）|
 | 24 | `websockets` 依赖声明 | ❌→✅ 原先只是 `uvicorn[standard]` 的传递依赖，采集器直接 import 后已在 `pyproject.toml` 显式声明 `websockets>=15.0` |
 | 25 | 会话泄漏修复 | ✅ 修前 `test_health` 必现 `Unclosed client session`，修后消失 |
@@ -469,8 +485,9 @@ async def get_market_context(
 | 28 | **覆盖率** | ✅ **99.8197%**（对理论分钟格子）。35 段缺口共 8,632 分钟，全部落在 2017-2021；2022/2024/2025/2026 一根不缺 |
 | 29 | **残余缺口归因** | ✅ 复拉 2018-02-07→10（格子 5,760 分钟）：Binance 仅返回 3,734 根、`rows_inserted=0` —— **缺口是交易所自身停机，非本系统丢失**。独立交叉验证：文档记载的停机窗口与实测缺口逐点吻合（见 §6.1 纠正 #4）|
 | 30 | **回补与采集并发** | ✅ 采集器与 14 分钟批量写入并行全程无碍：`reconnects_session=0`、`last_error=null`、`/api/v1/health` 报 `market: ok / lag 11s` |
+| 31 | **跨进程观测的真实性**（迁移到独立进程后重验） | ✅ 2026-09-24。`python -m agent.market --status-once`：`data_flowing=true`、`collector_owner="other"`、`session=null`、`gap_count_24h=0`、`bars_count_24h=1439 == bars_expected_24h=1439`；`/api/v1/health` → `market: "ok" / "lag 1s"`（不再是 `disabled`）。**风险 #1 的告警首次真的响**：停用计划任务 + 硬杀采集器 → 2 秒内 `collector_owner` 变 `none`，约 100s 后 `market: "error" / "stale: lag 209s > 180s"`；恢复（重新启用任务 + `/Run`）→ `market: "ok"`、`lag 55s`、`owner: "other"`、`gap_count_24h=0`（约 5 分钟的空窗被自动回补抹平）。`scripts/verify_market_standalone.py` 重跑 10 项仍全 PASS；全套 131 项通过 |
 
-**实测纠正的既有认知（5 条）：**
+**实测纠正的既有认知（6 条）：**
 
 1. `_client.py` 同时设置 `wsProxy` + `wssProxy` 的后果需要重新定位：ccxt **不在构造时**报错，只有真正开 WS（`check_ws_proxy_settings()`，由 `watch_*` 调用）才抛 `InvalidProxySettings`。已实测复现并修掉（只保留 `wssProxy`，币安行情 WS 是 `wss://`）。另注：删除 `market_stream.py` 后仓库内已无任何 ccxt WS 调用点，此修复属预防性。
 2. `insert_rows` 的计数**不能靠 `rowcount`**：实测在 `executemany` + `ON CONFLICT DO NOTHING` 下，Python 的 sqlite3 驱动即使首次插入也返回 0。已改为"先查该范围已存时间戳、只写缺失行"——精确计数，且重放退化为纯读不写。
@@ -481,6 +498,7 @@ async def get_market_context(
    - **`<RestartOnFailure>` 不生效。** 注册后该项保留在任务定义里，但无论手动启动还是由真触发器（TimeTrigger）启动，动作以退出码 1 失败后**没有任何重试**（间隔设 1 分钟，分别观察 3.5 分钟与 6 分钟）。计划任务操作日志（`Microsoft-Windows-TaskScheduler/Operational`）默认关闭，未提权也拿不到调度器的判断依据，无法进一步定位。
    - **这两条合起来改变了一个设计决定**：崩溃恢复不再依赖 `RestartOnFailure`，改用「重复唤醒 + `MultipleInstancesPolicy=IgnoreNew`」—— 采集器活着时唤醒被 IgnoreNew 吞掉，死了则由下一次唤醒拉起（实测：硬杀后下一次心跳即拉起并继续落库，`rows 1000 → 2881`）。它顺带覆盖了 `RestartOnFailure` 逻辑上修不了的洞：任务被系统正常结束不算"失败"，不触发重启，而重复唤醒照样能救回来。
    - **教训：`schtasks` 注册成功只说明 XML 合法，不代表设置被执行。** 每一项守护设置都必须单独构造一个**能观测的失败场景**去证明它真的生效 —— 否则就是在无人值守的核心上放了一个静默失效的开关。
+6. **观测面的"谎报"不会自己暴露，而它恰好长在告警通道上。** 采集器迁出 API 进程后，观测端点里 15 个取自进程内快照的字段在 API 进程里恒为 `false`/`null`/0，而数据其实在流（实测 `lag_seconds=9` 配 `collector_running=false`）。更糟的是 `/health` 的告警**在迁移前就已经失效**：`market_health()` 一看到 `MARKET_COLLECTOR_AUTOSTART=false` 就返回 `"disabled"`，而 `routes.py` 只在 `market == "error"` 时置 overall 为 `degraded` —— 于是迁移后 `/health` 永远报 `disabled`、overall 永远 `ok`，**采集器真的死了也不会响**。这条被同一条迁移揭开，而不是被任何测试发现：#22 记的"采集器停跑 → `degraded`"从来靠的是那个短路，短路一拆就露馅。**教训：被"假通过"覆盖的验收项与未验证的验收项等价，甚至更坏 —— 它会让人以为这块已经验过了。** 拆掉的是一个从来没抓到过 `_loop` 静默死亡的 `not snap.running` 分支（`running` 只在 `stop()` 里清），拆它没有损失；顺带把 `gap_count_24h` 从 `snap.gaps_filled`（本进程**补齐**数，方向与原意相反）改成真从库里算的"**缺了多少**"—— 旧的写法让阶段一那条验收可以**空洞通过**（见 §8）。
 
 **一个反直觉但重要的事实：`backfill_history()` 补不了"中间的洞"。** 它的续传起点是库内 `max(time) + 1 周期`（§6.1 #19 已验证该短路行为），因此只要库里已有最新 bar，它就判定"已补到最新"直接返回 0 请求 —— 而那种「2017 一段 + 近期一段」的双岛形态恰恰是它完全无法处理的。**启动时的自动回补（`MARKET_BACKFILL_ON_START`）同理，只能跟随尾部，不能自愈历史空洞。** 全量补洞必须走 `backfill_range()` 显式给区间；`POST /api/v1/market/backfill` 端点同样受此限制。这是设计上的已知边界，非缺陷，但运维上要知道：**洞一旦形成，只能靠 `scripts/backfill_market_history.py` 手动补。**
 
@@ -492,7 +510,7 @@ async def get_market_context(
 
 | # | 风险 | 影响 | 对策 |
 |---|------|------|------|
-| 1 | **采集器静默死亡** | 数据断流但无人知 | 计划任务每 5 分钟唤醒拉起（`IgnoreNew` 保证不重入，ADR-017 缺口 2）；`lag_seconds` 指标 + `/health` degraded；缺口检测兜底。**残余盲区**：进程活着但卡住时唤醒会被 `IgnoreNew` 吞掉，尚无独立心跳识别（见 §8）|
+| 1 | **采集器静默死亡** | 数据断流但无人知 | 计划任务每 5 分钟唤醒拉起（`IgnoreNew` 保证不重入，ADR-017 缺口 2）；`lag_seconds` 指标 + `/health` degraded；缺口检测兜底。**告警通道本身已于 2026-09-24 排掉一个静默失效**：此前 `/health` 的判定被 `MARKET_COLLECTOR_AUTOSTART` 短路成 `disabled`，采集器真死也不会响（§6.1 纠正 #6、#31 实测响起）。**残余盲区**：进程活着但卡住时唤醒会被 `IgnoreNew` 吞掉，尚无独立心跳识别（见 §8）；`collector_owner=other` + lag 上涨是它的指纹，但现在只能看见、不能自动救 |
 | 2 | **代理不稳定** | 连接重置、读超时、数据缺失 | 指数退避重连；回补带重试（实测代理有过偶发超时）；重连后先补缺口 |
 | 3 | **prompt 膨胀** | token 成本激增、决策劣化 | ADR-012 双闸 + `truncated` 标志；对供数层写契约测试 |
 | 4 | **未完成 bar 入库** | 指标基于半根 bar，信号失真 | 采集层按 `x=true` 过滤（实测可靠） |
@@ -515,11 +533,11 @@ async def get_market_context(
 - [x] 残余缺口已归因 —— ✅ 8,632 分钟 / 35 段全部落在 2017-2021，复拉验证为**币安自身停机**，非本系统丢失（§6.1 #29）。**该结论改变了"覆盖率必须 100%"的预期：100% 是达不到的，99.82% 已是 Binance 历史数据的上限**
 - [x] 回补可重放：同一区间重复回补不产生重复行 —— ✅ §6.1 #14
 - [~] 回补可断点续传：中断后重启从断点继续，不从头开始 —— 续传基点已验（库空→从头 / 库满→0 请求，§6.1 #19），**飞行中杀进程的中断测试未做**
-- [ ] 连续运行 24h，`gap_count_24h` 自动补齐至 0 —— **未跑**（§6.1 #17 最长连续运行 190s）。**计时已于 2026-09-24 00:16 迁移时清零重算** —— 数据本身连续（新进程从 `max(time)` 续上，5 分钟空窗由自动回补补掉），但"连续跑 24h 不死"这条断言必须从守护形态下重新起算，那才是这次迁移真正要证的东西
+- [ ] 连续运行 24h，`gap_count_24h` 归零（或残余缺口全部已归因）—— **未跑**（§6.1 #17 最长连续运行 190s），**且当前设备条件不支持，已由用户明确推迟**。`gap_count_24h` 已于 2026-09-24 改语义：现在是"最近 24h **应有而未落库**的 bar 数"，从库里算（此前取 `snap.gaps_filled`，本进程补齐数 —— 那条口径下这条验收可以**空洞通过**，因为它读的是"补了多少"而不是"还缺多少"）。措辞也从"补齐至 0"改为"归零，或残余缺口全部已归因"：**Binance 自身停机造成的缺口补不出来**（§6.1 #29 已证），此时 `gap_count_24h` 不可能为 0，判据必须是"残余缺口已归因"而不是一个恒不可达的 0。**计时已于 2026-09-24 00:16 迁移时清零重算** —— 数据本身连续（新进程从 `max(time)` 续上，5 分钟空窗由自动回补补掉），但"连续跑 24h 不死"这条断言必须从守护形态下重新起算，那才是这次迁移真正要证的东西
 - [x] 正常态 `lag_seconds < 90` —— ✅ 实测 4s / 16s / 40s
 - [x] 进程重启后自动回补停机期间的缺口 —— ✅ §6.1 #18（2881 / 2 / 3）
-- [ ] 断网 → 恢复，采集自动续上且数据无洞 —— **未测**（代理抖动下的重连/重试逻辑已实现，退避未被真实触发）
-- [~] 采集器死亡时 `/health` 在 180s 内变为 `degraded` —— 判定逻辑已实现并有单测（`test_market_health_error_when_lag_exceeds_threshold`）+ 实机返回 `market: "ok"`，**真实死亡注入未做**
+- [ ] 断网 → 恢复，采集自动续上且数据无洞 —— **未测**（代理抖动下的重连/重试逻辑已实现，退避未被真实触发）。**2026-09-24 由用户手动断网执行**：`market_health()` 的判定逻辑已在独立进程形态下实测有效（§6.1 #31），本次断网是该逻辑第一次面对真实退避重连
+- [x] 采集器死亡时 `/health` 在 180s 内变为 `degraded` —— ✅ **2026-09-24 实测响起**（§6.1 #31）：停用计划任务 + 硬杀采集器，约 100s 后 `market: "error" / "stale: lag 209s > 180s"`。判据同时升级：`data_flowing` 与 `collector_owner` 分开给出，`owner=none`（进程没了，计划任务会拉回来）与 `owner=other`（**活着但停滞**，守护机制的盲区，需人介入）不再混为一谈。阈值从写死的 180s 改为 `max(180s, 3 个周期)`——写死值在 `MARKET_INTERVAL=1h` 下会每小时约 94% 的时间误报
 
 图例：`[x]` 已实测通过 / `[~]` 部分验证 / `[ ]` 未验证。
 
@@ -530,6 +548,8 @@ async def get_market_context(
 - [x] **实测确认采集器进程的稳定归属** —— **2026-09-24 达成**。线上采集器已迁到独立入口并由计划任务托管，父进程是任务计划服务（实测 `pid 21156 ← 2064`），不再挂在启动它的 shell 链下。原先那条"老进程不持单实例锁、可与新采集器并行而不报警"的窗口也随迁移关闭（迁移时实测：老进程被杀后新实例立刻拿到锁）。**迁移方式**：`.env` 置 `MARKET_COLLECTOR_AUTOSTART=false` → 停掉 API 内的老采集器 → `scripts/install_market_task.py --install --start`。**迁移期实测**（在真任务上做的杀活验收，不只是验收脚本）：硬杀 `pid 16176` → 下次心跳（00:16:30）拉起 `pid 21156`，日志 `resuming backfill for BTCUSDT from stored max(time)`、WS 重连成功、`lag_seconds` 回到 39s
 
 **上线前必须先补的两项（原三项中的"全量历史回补"已于 2026-09-23 完成）：** **24h 连续运行**、**断网恢复**。前者决定数据底座是否可信，后者决定无人值守时会不会静默断流。
+
+> 2026-09-24：**24h 连续运行已由用户明确推迟**（当前设备条件不支持连续开机 24h），**不计入阻塞项**。断网恢复由用户手动断网执行。两项未完成前，阶段一按"数据底座尚未验收"对待 —— 这不是措辞问题：**未验证的验收项与验过的等价性只存在于纸面上**。
 
 ### 阶段二：接入 Agent
 
@@ -564,17 +584,23 @@ async def get_market_context(
 | `scripts/backfill_market_history.py` | ✅ 新增。全量补洞专用 —— 显式区间驱动 `backfill_range()`，带进度/ETA，跑完自检覆盖率与最大残余缺口（`_largest_gaps` 用 SQL 窗口函数在库内算，不把 480 万行时间戳拉进 Python）。**存在的理由就是 `backfill_history()` 补不了中间的洞**（§6.1 纠正 #3）|
 | `tests/test_market_backfill.py` | ✅ 新增 4 个单测，全程不出网（`_fetch_chunk` 被替换）。锁定并发下的统计口径（`rows_inserted == 库内实际行数`）、重放幂等、失败分片计数、进度回调次数 |
 | `agent/market/backfill.py` | ✅ 修并发丢失更新（§6.1 纠正 #3）|
-| `agent/market/__main__.py` | ✅ 新增。数据面独立入口（ADR-017 缺口 1）：`python -m agent.market`。`--status-once` 只读打一份状态（stdout 纯 JSON、说明走 stderr）、`--status-interval` 周期打状态行。**状态行刻意不用 `market_health()`** —— 它把"是否在跑"与 `MARKET_COLLECTOR_AUTOSTART` 绑死，独立运行时该开关是 false，会一直报 disabled。信号用 `signal.signal` + `call_soon_threadsafe`（Windows 的 ProactorEventLoop 不支持 `loop.add_signal_handler`），第二次信号硬退出 |
+| `agent/market/__main__.py` | ✅ 新增。数据面独立入口（ADR-017 缺口 1）：`python -m agent.market`。`--status-once` 只读打一份状态（stdout 纯 JSON、说明走 stderr）、`--status-interval` 周期打状态行。**状态行刻意不用 `market_health()`** —— 那里只需要一句"连上了没"的粗话，而 `market_health()` 走的是共享判定、还牵扯锁探针。信号用 `signal.signal` + `call_soon_threadsafe`（Windows 的 ProactorEventLoop 不支持 `loop.add_signal_handler`），第二次信号硬退出。（2026-09-24：`connected` 等字段移进 `session` 后，状态行读 `session`；被守护的进程**没有终端**，状态行是它唯一的遥测，一条会说谎的状态行比没有更糟 —— 改结构时它不会报错，只会静默降级成 `connected=no reconnects=None`，所以这条接线必须与结构改动同批改）|
 | `agent/market/lock.py` | ✅ 新增。采集器单实例锁。用 OS 管理的文件锁而非 PID 文件判活 —— Windows 上 `os.kill(pid, 0)` **会真的终止目标进程**，不能探活；内核锁随进程退出自动释放，故不存在"陈旧锁"。锁文件格局是**第 0 字节加锁、第 1 字节起写 pid**，被 Windows 强制锁逼出来的（字节范围锁对任何其他句柄生效，含本进程新开的句柄，线索写在第 0 字节谁都读不到，连持有者自己都吃 `PermissionError`）。报错文案不叫人删锁文件：实测持锁期间 `unlink` 报 `PermissionError`，且锁绑句柄不绑路径 |
+| `agent/market/lock.py`（补）| ✅ 2026-09-24 增补**只读锁探针** `probe_lock_path()` / `probe_lock_state()`：旁观者不加锁地问"现在有没有采集器"。这是"**卡住但不死**"唯一能自动分辨的信号（配数据新鲜度：lag 涨 + 持锁 = 活着但停滞；lag 涨 + 空闲 = 进程没了）。判据是"读第 0 字节失败**且**读第 1 字节成功"才算 `held` —— 不能只看 PermissionError，ACL/杀软/只读介质给的是同一种（CPython 经 CRT 只拿得到 errno 13，`winerror` 是 `None`，区分不了），那就只能报 `unknown`。另外 `os.close(fd)` 必须在 `finally`（异常是在 `read` 上抛的、不在 `open` 上，每次调用漏一个 fd）。**`__del__` → `release()`** 也是这一批加的：`CollectorLock(path).acquire()` 这种不接住返回值的一次性写法会留下**幽灵持有者**（句柄不关、锁不放、对象已不可达），把真正的采集器挡在门外 —— 这个坑是写"探针不该顺手加锁"的测试时被测试逼出来的 |
 | `scripts/verify_market_standalone.py` | ✅ 新增。独立运行的验收检查，**永远用临时库**，所以线上采集器在跑时也能安全执行。10 项实测全 PASS：独立启动并落库 2881 根 / 跨进程互斥（退出码 3 且报错含持有者 pid）/ 硬杀后内核释放锁、新实例照样起得来 / Ctrl-Break 优雅退出（退出码 0）|
-| `tests/test_market_lock.py` | ✅ 新增 15 个单测，不出网（`_loop` 换成空转）。含用**真子进程被 kill** 验证"锁随进程死亡自动释放"，以及一条 `skipif(nt)` 钉住"持锁期间删不掉锁文件"这个事实 —— 报错文案的前提若变了这里会红 |
+| `tests/test_market_lock.py` | ✅ 新增 15 个单测，不出网（`_loop` 换成空转）。含用**真子进程被 kill** 验证"锁随进程死亡自动释放"，以及一条 `skipif(nt)` 钉住"持锁期间删不掉锁文件"这个事实 —— 报错文案的前提若变了这里会红。2026-09-24 补锁探针 6 条（真子进程持锁 → `held`；空闲/零字节文件 → `free`；目录 → `unknown`；非 Windows → `unknown`）、一条钉住"**别把 `_read_holder()` 当探针**"（同一个持锁文件，它读得到线索、而探针说的是 `held` —— 拿它判活会 100% 报空闲）、一条"探针不加锁"（探针每次 `/health` 都跑，顺手加锁就会有把采集器关在门外的窗口）、以及一条 `__del__` 释放句柄（幽灵持有者）|
+| `agent/market/collector.py`（补）| ✅ 2026-09-24 重排判定与响应结构。**共享判定** `_flow_verdict()` —— 让 `/health` 与 `/market/status` 由同一处得出结论，否则两个面会互相矛盾；**判定只看数据流动与内核锁，不看进程归属**（跨进程读得到的只有这两条信道）。`market_health()` 去掉 `MARKET_COLLECTOR_AUTOSTART` 短路与 `not snap.running` 分支（后者**从来没抓到过 `_loop` 静默死亡** —— `running` 只在 `stop()` 里清，留着会让人以为它承重），词汇表收敛为 `ok`/`warming_up`/`error`，**没有 `disabled`**（数据面停摆就是风险 #1 本身）。阈值从写死的 `_STALE_LAG_S=180` 改为 `max(180s, 3 个周期)`：写死值在 `MARKET_INTERVAL=1h` 下每小时约 94% 的时间误报，此前被 `disabled` 短路掩盖着。空库用锁探针一分为二：**持锁** → `warming_up`（冷启动回补中），**空闲** → `error`（既没有数据也没有采集器）。`market_status_detail()` 顶层只留跨进程字段，进程内快照收进 `session`（无会话时 `null`）；`gap_count_24h` 改为真从库里算"**缺了多少**"并并列给出 `bars_expected_24h`（好让 `actual > expected` 这种越窗回补异常看得见，而不是被 `max(…,0)` 吃掉）|
+| `agent/api/schemas.py`（补）| ✅ 2026-09-24 `MarketStatusResponse` 重写为新结构（`collector_owner` / `data_flowing` / `session`），新增 `MarketSessionResponse`。`HealthResponse.market` 的默认值 `"disabled"` 成为死值 → 改 `"error"`（默认值应偏向大声失败）|
+| `scripts/smoke_market_collector.py`、`scripts/install_market_task.py`（补）| ✅ 2026-09-24 随结构同步改取值路径（前者按顶层/`session` 分开取值并在 `session is None` 时提前返回；后者的 `--status` 关键行过滤加入 `data_flowing` / `collector_owner` / `bars_expected_24h`）。这两处都是**会静默降级**的消费方：`detail["connected"]` 改从 `session` 取，不改就是 `KeyError`（好一点）或读到 `None`（更坏）|
 | `pyproject.toml` | ✅ 新增 `[project.scripts] bianca-market`，与 `-m` 入口共用同一个 `main()` |
 | `agent/market/__main__.py`（补）| ✅ 增补 `--log-file`：带 `RotatingFileHandler`（5 MB × 3 份，UTF-8）。理由：被守护的进程**没有终端**，不给它落文件就看不到重启与退出原因 —— 守护的价值一半在"看得见" |
 | `agent/market/task.py` | ✅ 新增。计划任务描述符（ADR-017 缺口 2），**纯函数生成 XML，不碰系统** —— 所以能在任何平台单测，注册/卸载留给脚本。恢复机制是「重复唤醒 + `IgnoreNew`」。每一处非默认设置都对应一个会让无人值守静默失效的默认值：`ExecutionTimeLimit=PT0S`（默认 72h 会静默杀掉长跑任务）、两条电池设置（默认拔电源即停）、`StartWhenAvailable`、`StopAtDurationEnd=false`。两个实测陷阱写在 docstring 里：`<Repetition>` 挂 `LogonTrigger` 上不生效、`RestartOnFailure` 不生效 |
 | `scripts/install_market_task.py` | ✅ 新增。注册/卸载/查状态（`--dry-run` / `--install` / `--uninstall` / `--status`）。XML 以 UTF-16 写临时文件再 `schtasks /Create /XML`。**`--status` 额外跑一次 `--status-once`** —— 计划任务的"上次运行结果"只说进程怎么退出的，不告诉你数据还在不在流 |
 | `scripts/verify_market_supervision.py` | ✅ 新增。守护的验收检查，同样是临时库 + 一次性任务名，**无需提权**、线上采集器不受影响。注入临时库的办法是换掉 `<Actions>` 块而**保留全部 Settings/Triggers**（用 `.cmd` 包一层），这样验的就是真实设置 |
 | `tests/test_market_task.py` | ✅ 新增 22 个单测，全部离线。重点钉住两类东西：会**静默失效的默认值**（限时、电池、`IgnoreNew`、`StartWhenAvailable`），以及上面两个实测陷阱的**反向断言**（`LogonTrigger` 上不得有 `Repetition`、描述符里不得有 `RestartOnFailure`），免得日后有人以为它们在兜底 |
-| 文档大版本号 | ✅ 本设计文档 **v0.7**：v0.3 补 §2.7 可观测字段与健康判定、§6.1 实现期实测、§8 阶段一验收实况；v0.4 补全量回补实测（§6.1 #26-30）、并发统计丢失更新（纠正 #3）、`backfill_history()` 补洞边界 + 缺口归因的外部交叉验证（纠正 #4）、§4 容量估算按实测行宽修正；v0.5 标记 ADR-010 与产品要求冲突、新增提案 ADR-017、定位上位文档缺口（§9.2）；v0.6 落地 ADR-017 缺口 1（独立入口 + 单实例锁）并实测跨进程观测不可用；v0.7 落地 ADR-017 缺口 2（进程守护）并实测暴露计划任务两个静默陷阱（§6.1 纠正 #5）|
+| `tests/test_market_storage.py`（补）| ✅ 2026-09-24 五个 `market_health` 测试全部重写（`collector` 参数没了、绑定 AUTOSTART 的那个按决策删除），改由 `lock_free` / `lock_held` 两个 monkeypatch fixture 摆布锁状态；新增一条**关键回归** `test_market_health_ignores_the_autostart_switch`（钉住"开关不再是判定依据"）、阈值随周期缩放、空库的三种归宿、空标的列表 → `error`。状态部分用 `_CROSS_PROCESS_KEYS` 冻结顶层 key 集合 —— **按 key 集合断言，防止谎报日后以新名字回来**；另有 `gap_count_24h` 的算术（含 `actual > expected` 不被子句吞掉）、缺口语义不是"补齐数"的回归（对上 `snap.gaps_filled` 那个 bug）、以及坏周期不得 500 |
+| `.env.example`（补）| ✅ 2026-09-24 补 `MARKET_COLLECTOR_AUTOSTART` 的真实语义：它只管 lifespan 要不要拉起进程内的采集器，**不再是 `/health` 的判定依据**（原先它一关，`market_health()` 就返回 `disabled`，告警静默失效）|
+| 文档大版本号 | ✅ 本设计文档 **v0.8**：v0.3 补 §2.7 可观测字段与健康判定、§6.1 实现期实测、§8 阶段一验收实况；v0.4 补全量回补实测（§6.1 #26-30）、并发统计丢失更新（纠正 #3）、`backfill_history()` 补洞边界 + 缺口归因的外部交叉验证（纠正 #4）、§4 容量估算按实测行宽修正；v0.5 标记 ADR-010 与产品要求冲突、新增提案 ADR-017、定位上位文档缺口（§9.2）；v0.6 落地 ADR-017 缺口 1（独立入口 + 单实例锁）并实测跨进程观测不可用；v0.7 落地 ADR-017 缺口 2（进程守护）并实测暴露计划任务两个静默陷阱（§6.1 纠正 #5）；v0.8 止住观测面的跨进程谎报（§2.7 分区重排 + 锁探针 + `gap_count_24h` 语义更正），实测风险 #1 的告警首次真的响（§6.1 #31、纠正 #6）|
 
 ### 9.2 待同步更新（**尚未改动**）
 
@@ -601,9 +627,10 @@ async def get_market_context(
 | 6 | `websockets` 版本固定 vs 异常抑制 | 依赖稳定性 | ✅ 已定：**两者都做** —— 声明 `websockets>=15.0` 下限 + `install_ws_noise_filter()` 抑制该特定异常（§6.1 #20）|
 | 7 | 回补并发度（1 / 5-8 / 更高） | 回补耗时 vs 被限流风险 | ✅ **已定：5 够用**。全量实测 4,788 分片 / 825s（≈5.8 分片/秒，17.4s 每千分片），`failed_chunks=0`、全程无 429/418。按 klines 权重 2 计约 276 权重/分钟，远低于 6000/分的上限 —— 提到 8-10 只会把收益递减掉，还压缩限流余量 |
 | 9 | 历史空洞的自愈 | 运维、数据可信度 | ⬜ 待定（现状：`backfill_history()` 与启动自动回补受 `max(time)` 基点限制，**补不了中间的洞**，须手动跑 `scripts/backfill_market_history.py`；是否让采集器周期任务接管见 §6.1 纠正 #3）|
-| 10 | **数据面独立运行单元**（重开 ADR-010） | 架构、部署、无人值守 | 🔶 **部分已解（提案 ADR-017）**。逻辑分离已达成（ADR-007，代码依赖方向已实测干净）。运行期独立四项中**两项已解**：独立入口（缺口 1，2026-09-23）、进程守护（缺口 2，2026-09-24）；**未解**：部署形态仍是单服务（缺口 3）、观测端点仍耦合 API（缺口 4）。核心待决仍是**供数接口形态** —— 同进程函数调用 vs 共享库只读直读 vs IPC/HTTP，倾向前者中的"共享库只读" |
+| 10 | **数据面独立运行单元**（重开 ADR-010） | 架构、部署、无人值守 | 🔶 **部分已解（提案 ADR-017）**。逻辑分离已达成（ADR-007，代码依赖方向已实测干净）。运行期独立四项中**三项已解**：独立入口（缺口 1，2026-09-23）、进程守护（缺口 2，2026-09-24）、观测面谎报（缺口 4 的一半，2026-09-24 —— 端点不再报进程内的假状态，但仍挂在 API 的 router 上）；**未解**：部署形态仍是单服务（缺口 3）。核心待决仍是**供数接口形态** —— 同进程函数调用 vs 共享库只读直读 vs IPC/HTTP，倾向前者中的"共享库只读" |
 | 11 | 供数接口跨进程形态（ADR-017 的子问题） | 耦合度、失败模式 | ⬜ 待定。若选共享库直读，需评估跨进程只读下的 **WAL checkpoint 行为** 与"数据面未运行时控制面读到陈旧数据的降级语义" |
-| 12 | 卡住但仍存活的采集器谁负责救 | 无人值守的残余盲区 | ⬜ 待定。缺口 2 的守护按"任务还在不在"判死活，进程活着但 WS 静默停滞时不触发（见 §8）。候选判据：轮询库内 `max(time)` 的年龄，超阈主动退出让计划任务重拉 —— 但"主动退出"与"优雅退出码 0"的语义要分开，否则与 `ExecutionTimeLimit` 那类"正常结束不重启"的坑重逢 |
+| 12 | 卡住但仍存活的采集器谁负责救 | 无人值守的残余盲区 | ⬜ 待定。缺口 2 的守护按"任务还在不在"判死活，进程活着但 WS 静默停滞时不触发（见 §8）。2026-09-24 起**至少看得见了**：`collector_owner=other` 配 `lag` 持续上涨就是"活着但停滞"的指纹，`owner=none` 则是"进程没了"—— 两者以前分不开。但"看见"不等于"有人救"，自动救援仍需另一个独立心跳。候选判据：轮询库内 `max(time)` 的年龄，超阈主动退出让计划任务重拉 —— 但"主动退出"与"优雅退出码 0"的语义要分开，否则与 `ExecutionTimeLimit` 那类"正常结束不重启"的坑重逢 |
+| 13 | 采集器（持锁）与 `POST /market/backfill`（不持锁）并发写同一个库 | 数据正确性、锁的语义边界 | ⬜ **待定，本次刻意不动**。单实例锁保护的是 `MarketCollector` 实例，管不到 API 的这条路由：采集器由计划任务托管并持锁时，`POST /api/v1/market/backfill` 照样能在 API 进程里跑一次全量回补 —— **同一库上的两个写者**。落库幂等（`ON CONFLICT DO NOTHING`）所以数据不会错，但两个进程同时写 SQLite 会争锁、且回补期间的统计口径会混（两个进程各报自己那份）。**这是迁移前就存在的条件，不是本次引入的**（那时 API 内采集器与同一 API 的回补路由也在同一进程并发写）。把端点改成"检测到别人持锁就拒绝"会砍掉阶段一交付物的一项功能，属另一个决定 |
 | 8 | 是否同时回补 5m/1h 等周期 | 存储、查询性能 | ⬜ 待定（当前倾向：只存 1m，查询时聚合。订阅集合已就绪，加周期只需改 `MARKET_INTERVAL`）|
 
 ---

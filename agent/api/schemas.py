@@ -9,6 +9,8 @@ class HealthResponse(BaseModel):
     llm_provider: str
     llm: str
     llm_detail: str | None = None
+    market: str = "disabled"
+    market_detail: str | None = None
 
 
 class AgentStatusResponse(BaseModel):
@@ -160,3 +162,39 @@ class UsageBucket(BaseModel):
 class UsageSummaryResponse(BaseModel):
     today: UsageBucket
     total: UsageBucket
+
+
+class MarketStatusResponse(BaseModel):
+    """行情采集状态：采集器快照 + 库内事实。"""
+
+    collector_running: bool
+    connected: bool
+    symbols: list[str]
+    interval: str
+    last_bar_open_time: int | None = None
+    last_closed_bar_open_time: int
+    lag_seconds: int | None = None
+    bars_written_session: int = 0
+    bars_count_24h: int = 0
+    gap_count_24h: int = 0
+    reconnects_session: int = 0
+    last_gap_check_at: str | None = None
+    backfill_running: bool = False
+    backfill_last: dict | None = None
+    backfill_error: str | None = None
+    last_error: str | None = None
+    last_error_at: str | None = None
+    last_write_at: str | None = None
+    started_at: str | None = None
+    database: str
+
+
+class BackfillResponse(BaseModel):
+    status: str
+    detail: str | None = None
+    requests: int | None = None
+    rows_received: int | None = None
+    rows_inserted: int | None = None
+    failed_chunks: int | None = None
+    ranges: int | None = None
+    duration_s: float | None = None

@@ -10,10 +10,12 @@ from agent.api.schemas import (
     AgentTickResponse,
     AnalysisRequest,
     AnalysisResponse,
+    BackfillResponse,
     BalanceResponse,
     DecisionListResponse,
     DecisionLogItem,
     HealthResponse,
+    MarketStatusResponse,
     MessageResponse,
     RiskEventItem,
     RiskEventListResponse,
@@ -28,6 +30,7 @@ from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo
 from agent.exchange._client import format_binance_error
 from agent.graph.supervisor import run_agent_tick
 from agent.llm.analyzer import check_llm
+from agent.market.collector import get_collector, market_health, market_status_detail
 from agent.runner import get_runner
 from agent.storage.database import get_engine
 from agent.storage.repository import DecisionRepository, RiskEventRepository, TradeRepository
@@ -49,9 +52,19 @@ async def health() -> HealthResponse:
 
     binance = await check_binance_demo()
     llm = await check_llm(settings)
+    # 行情采集器探活（风险 #1：静默死亡）。warming_up 不算故障。
+    try:
+        market, market_detail = await market_health()
+    except Exception as exc:  # noqa: BLE001 — 探活自身失败也不能带崩 /health
+        market, market_detail = "error", f"{type(exc).__name__}: {exc}"
 
     overall = "ok"
-    if db_status != "ok" or binance["status"] == "error" or llm["status"] == "error":
+    if (
+        db_status != "ok"
+        or binance["status"] == "error"
+        or llm["status"] == "error"
+        or market == "error"
+    ):
         overall = "degraded"
 
     llm_status = llm["status"]
@@ -67,6 +80,8 @@ async def health() -> HealthResponse:
         llm_provider=settings.llm_provider,
         llm=llm_status,
         llm_detail=llm_detail,
+        market=market,
+        market_detail=market_detail,
     )
 
 
@@ -351,3 +366,17 @@ async def exchange_ticker(symbol: str | None = None) -> TickerResponse:
         change_24h_pct=ticker.get("percentage"),
         volume_24h_quote_usdt=ticker.get("quoteVolume"),
     )
+
+
+@router.get("/market/status", response_model=MarketStatusResponse)
+async def market_status() -> MarketStatusResponse:
+    """行情采集状态：lag_seconds 是最该盯的指标（> 数个周期即为异常）。"""
+    detail = await market_status_detail(get_collector())
+    return MarketStatusResponse(**detail)
+
+
+@router.post("/market/backfill", response_model=BackfillResponse)
+async def market_backfill() -> BackfillResponse:
+    """手动触发历史回补。幂等可重入；已在跑则直接返回。"""
+    result = await get_collector().backfill_history_now()
+    return BackfillResponse(**result)

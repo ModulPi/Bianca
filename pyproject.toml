@@ -12,6 +12,9 @@ dependencies = [
     "aiosqlite>=0.19",
     "ccxt>=4.0",
     "httpx>=0.27",
+    # 行情采集器直连 Binance WS（ADR-009）。原先只是 uvicorn[standard] 的
+    # 传递依赖，直接 import 就必须显式声明，否则换环境即断。
+    "websockets>=15.0",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
 ]

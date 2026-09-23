@@ -27,7 +27,15 @@ class SpotDemoExchange:
 
     async def __aenter__(self) -> SpotDemoExchange:
         self._exchange = self._build_exchange()
-        await self._exchange.load_markets()
+        try:
+            await self._exchange.load_markets()
+        except BaseException:
+            # __aenter__ 抛异常时 Python 不会调用 __aexit__，必须自己收尾。
+            # 币安不可达（超时 / 代理抖动）正是 load_markets 最常见的失败点，
+            # 不关就会每次失败都漏一个 aiohttp 会话 —— /health 会反复走这条路。
+            await self._exchange.close()
+            self._exchange = None
+            raise
         return self
 
     async def __aexit__(self, *args: object) -> None:

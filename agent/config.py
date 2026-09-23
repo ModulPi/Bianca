@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     agent_tick_interval: int = Field(default=300, ge=10)
     trade_symbol: str = "BTCUSDT"
 
+    # Market data (行情数据模块，见 docs/outline-design/模块设计/行情数据模块设计-Bianca.md)
+    # 行情一律取实盘（ADR-013），交易仍走上面的 Binance Demo
+    market_rest_base_url: str = "https://api.binance.com"
+    market_ws_base_url: str = "wss://stream.binance.com:9443/ws"
+    market_database_url: str = "sqlite+aiosqlite:///./data/market.db"
+    market_symbols: str = "BTCUSDT"
+    market_interval: str = "1m"
+    market_retention_days: int = Field(default=3650, ge=0)
+    market_backfill_start: str = "2017-08-17"
+    market_backfill_on_start: bool = True
+    market_backfill_concurrency: int = Field(default=5, ge=1, le=20)
+    market_collector_autostart: bool = True
+    market_max_context_chars: int = Field(default=2000, gt=0)
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/bianca.db"
 
@@ -44,7 +58,12 @@ class Settings(BaseSettings):
     api_port: int = 8000
     log_level: str = "INFO"
 
-    @field_validator("llm_auto_execute", mode="before")
+    @field_validator(
+        "llm_auto_execute",
+        "market_backfill_on_start",
+        "market_collector_autostart",
+        mode="before",
+    )
     @classmethod
     def parse_bool(cls, value: object) -> bool:
         if isinstance(value, str):
@@ -54,6 +73,16 @@ class Settings(BaseSettings):
     @property
     def data_dir(self) -> Path:
         return Path("data")
+
+    @property
+    def market_symbol_list(self) -> list[str]:
+        """采集层按「订阅集合」建模（ADR-016），当前通常只有一个元素。"""
+        return [s.strip().upper() for s in self.market_symbols.split(",") if s.strip()]
+
+    @property
+    def market_proxy(self) -> str:
+        """行情链路统一走 BINANCE_PROXY —— 实测直连 REST 超时，不做双路径。"""
+        return self.binance_proxy.strip()
 
     @property
     def binance_configured(self) -> bool:

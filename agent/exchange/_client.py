@@ -20,7 +20,8 @@ def build_binance_config(settings: Settings) -> dict[str, Any]:
     proxy = settings.binance_proxy.strip()
     if proxy:
         config["aiohttp_proxy"] = proxy
-        config["wsProxy"] = proxy
+        # ccxt 把 wsProxy/wssProxy 同时设置视为歧义，直接抛 InvalidProxySettings。
+        # 币安行情 WS 是 wss://，只保留 wssProxy 即可覆盖（REST 由 aiohttp_proxy 负责）。
         config["wssProxy"] = proxy
     return config
 

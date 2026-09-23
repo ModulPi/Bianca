@@ -448,7 +448,7 @@ async def get_market_context(
 | 26 | **全量历史回补** | ✅ `scripts/backfill_market_history.py`，4,788 分片并发 5，**825s 跑完**，`failed_chunks=0`，`rows_received=4,778,533` |
 | 27 | **落库校验** | ✅ **4,778,552 行 / 809.2 MB**（+ WAL 5.0 MB）；`distinct(time,symbol,interval) == count` 无重复、OHLCV 无空值、`PRAGMA integrity_check=ok` |
 | 28 | **覆盖率** | ✅ **99.8197%**（对理论分钟格子）。35 段缺口共 8,632 分钟，全部落在 2017-2021；2022/2024/2025/2026 一根不缺 |
-| 29 | **残余缺口归因** | ✅ 复拉 2018-02-07→10（格子 5,760 分钟）：Binance 仅返回 3,734 根、`rows_inserted=0` —— **缺口是交易所自身停机**（2018-02-08 币安异常交易停机），非本系统丢失 |
+| 29 | **残余缺口归因** | ✅ 复拉 2018-02-07→10（格子 5,760 分钟）：Binance 仅返回 3,734 根、`rows_inserted=0` —— **缺口是交易所自身停机，非本系统丢失**。独立交叉验证：文档记载的停机窗口与实测缺口逐点吻合（见 §6.1 纠正 #4）|
 | 30 | **回补与采集并发** | ✅ 采集器与 14 分钟批量写入并行全程无碍：`reconnects_session=0`、`last_error=null`、`/api/v1/health` 报 `market: ok / lag 11s` |
 
 **实测纠正的两个既有认知：**
@@ -456,6 +456,7 @@ async def get_market_context(
 1. `_client.py` 同时设置 `wsProxy` + `wssProxy` 的后果需要重新定位：ccxt **不在构造时**报错，只有真正开 WS（`check_ws_proxy_settings()`，由 `watch_*` 调用）才抛 `InvalidProxySettings`。已实测复现并修掉（只保留 `wssProxy`，币安行情 WS 是 `wss://`）。另注：删除 `market_stream.py` 后仓库内已无任何 ccxt WS 调用点，此修复属预防性。
 2. `insert_rows` 的计数**不能靠 `rowcount`**：实测在 `executemany` + `ON CONFLICT DO NOTHING` 下，Python 的 sqlite3 驱动即使首次插入也返回 0。已改为"先查该范围已存时间戳、只写缺失行"——精确计数，且重放退化为纯读不写。
 3. **`stats.rows_inserted += await repo.insert_rows(rows)` 是丢失更新**。增强赋值会**先读左值、再 await**：并发 worker 全都读到同一个旧值，各自加完再写回，互相覆盖。全量跑时它报 416.1 万而库内实际 477.8 万，**少报 61.8 万**（`insert_rows` 的返回值本身是对的，丢在累加环节）。已在 `tests/test_market_backfill.py` 用临时库 + `concurrency=5` 固定住交错窗口复现（修复前 `rows_inserted=50`，应为 250），修法为先 `await` 拿到增量再同步累加。**教训：库里数据正确 ≠ 统计口径正确**，验收若只看 `rows_inserted` 会被误导。
+4. **残余缺口归因必须落到"可交叉验证的外部事实"，不能停在像是合理的猜测上。** 第一版把最大的缺口（2018-02-08，2,011 分钟）写成"币安异常交易停机"——错了。查证后确认是**副本数据库集群失步导致的停机升级**（CZ 当时说明 replica DB cluster 数据不同步、需从主库全量重同步；维护自 UTC 2/8 00:00 左右开始，官方宣布 2/9 04:00 UTC 恢复，后又因云厂商遭 DDoS 延后）。而"异常交易"（irregular trading activity）是 2018 年 2 月下旬**另一桩**钓鱼 + Viacoin 操纵事件，两者被我混为一谈。**修正后反而得到了更强的结论**：实测缺口 `2018-02-08 00:28 → 2018-02-09 10:00` 与公开报道的停机窗口逐点吻合（起于维护开始时刻、止于宣布恢复时刻之后）—— 这是独立于币安 API 的**第三方证据**，比"复拉发现没数据"更能证明缺口来自交易所而非本系统。**教训：一个看起来合理的归因（"肯定是交易所停机"）恰好正确时，最容易停止验证；而错在细节上的归因会在日后被引用时变成假事实。**
 
 **一个反直觉但重要的事实：`backfill_history()` 补不了"中间的洞"。** 它的续传起点是库内 `max(time) + 1 周期`（§6.1 #19 已验证该短路行为），因此只要库里已有最新 bar，它就判定"已补到最新"直接返回 0 请求 —— 而那种「2017 一段 + 近期一段」的双岛形态恰恰是它完全无法处理的。**启动时的自动回补（`MARKET_BACKFILL_ON_START`）同理，只能跟随尾部，不能自愈历史空洞。** 全量补洞必须走 `backfill_range()` 显式给区间；`POST /api/v1/market/backfill` 端点同样受此限制。这是设计上的已知边界，非缺陷，但运维上要知道：**洞一旦形成，只能靠 `scripts/backfill_market_history.py` 手动补。**
 
@@ -533,7 +534,7 @@ async def get_market_context(
 | `scripts/backfill_market_history.py` | ✅ 新增。全量补洞专用 —— 显式区间驱动 `backfill_range()`，带进度/ETA，跑完自检覆盖率与最大残余缺口（`_largest_gaps` 用 SQL 窗口函数在库内算，不把 480 万行时间戳拉进 Python）。**存在的理由就是 `backfill_history()` 补不了中间的洞**（§6.1 纠正 #3）|
 | `tests/test_market_backfill.py` | ✅ 新增 4 个单测，全程不出网（`_fetch_chunk` 被替换）。锁定并发下的统计口径（`rows_inserted == 库内实际行数`）、重放幂等、失败分片计数、进度回调次数 |
 | `agent/market/backfill.py` | ✅ 修并发丢失更新（§6.1 纠正 #3）|
-| 文档大版本号 | ✅ 本设计文档 **v0.4**：v0.3 补 §2.7 可观测字段与健康判定、§6.1 实现期实测、§8 阶段一验收实况；v0.4 补全量回补实测（§6.1 #26-30）、并发统计丢失更新与 `backfill_history()` 补洞边界（§6.1 纠正 #3）、§4 容量估算按实测行宽修正 |
+| 文档大版本号 | ✅ 本设计文档 **v0.4**：v0.3 补 §2.7 可观测字段与健康判定、§6.1 实现期实测、§8 阶段一验收实况；v0.4 补全量回补实测（§6.1 #26-30）、并发统计丢失更新（纠正 #3）、`backfill_history()` 补洞边界 + 缺口归因的外部交叉验证（纠正 #4）、§4 容量估算按实测行宽修正 |
 
 ### 9.2 待同步更新（**尚未改动**）
 

@@ -24,6 +24,8 @@ import logging
 import os
 import signal
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from agent.config import Settings, get_settings
 from agent.market.collector import MarketCollector, get_collector, market_status_detail
@@ -39,12 +41,28 @@ EXIT_ALREADY_RUNNING = 3
 _DEFAULT_STATUS_INTERVAL_S = 300
 
 
-def _configure_logging(level: str) -> None:
+def _configure_logging(level: str, log_file: str | None = None) -> None:
+    """日志到 stdout；`--log-file` 时同时（也是主要地）落到文件。
+
+    被计划任务/服务拉起时必须有文件日志：守护进程没有终端，stdout 会被丢掉，
+    于是"它到底崩溃过没有、被拉起来几次"就完全不可见了 —— 一个看不见重启的
+    守护进程等于没有守护。
+    """
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if log_file:
+        path = Path(log_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # 轮转而非追加：守护进程会跑很多年，无界日志最终会填满磁盘
+        handlers.append(
+            RotatingFileHandler(path, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+        )
+
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stdout,
+        handlers=handlers,
+        force=True,
     )
 
 
@@ -209,13 +227,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "要看 lag_seconds 等 DB 派生字段",
     )
     parser.add_argument("--log-level", default=None, help="默认取配置 LOG_LEVEL")
+    parser.add_argument(
+        "--log-file",
+        default=None,
+        help="同时把日志写到该文件（5MB 轮转，留 3 份）。被计划任务/服务拉起时必给 —— "
+        "守护进程没有终端，不给文件日志就看不到它崩溃过没有",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     settings = get_settings()
-    _configure_logging(args.log_level or settings.log_level)
+    _configure_logging(args.log_level or settings.log_level, args.log_file)
 
     if not settings.market_symbol_list:
         logger.error("MARKET_SYMBOLS 为空，无法采集")

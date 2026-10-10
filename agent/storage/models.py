@@ -159,3 +159,82 @@ class EquitySnapshotLog(Base):
 
 
 Index("idx_equity_captured", EquitySnapshotLog.captured_at.desc())
+
+
+class GoalLog(Base):
+    """一个目标的完整生命周期（阶段 C-1，ADR-020 / 021 / 032 / 033）。
+
+    **这张表同时也是「会话」。** §2.3 给会话的定义就是"一个目标的完整生命周期的
+    载体"，所以没有单独的 `sessions` 表 —— 会话句柄就是 goal id。省掉的那张表
+    不会带来任何表达力损失，多出来的只会是两张表之间的一次同步。
+
+    最要紧的一条：**每个维度都可空，且空 = 用户没说。** ADR-020 要的是"自然语言
+    为主"，那就得能如实记下"这句话里没提回撤上限"。补一个 5% 进去，后面所有
+    "离目标还差多少"都建立在一个用户没同意过的数上，而事后看不出来是谁定的。
+    解析层（C-2）之所以能"点名问缺哪个"，靠的也正是这里区分得出空与不空。
+    """
+
+    __tablename__ = "goals"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+
+    # 用户原话。**不许只存解析结果** —— ADR-019 R1 的链头是"目标"，而目标就是
+    # 这句话。只留结构化的那份，事后没人能判断当时是解析错了还是用户说错了。
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # 解析器给出的结构化结果。与下面那几列**分开存**：那几列是用户改过之后的定稿，
+    # 这一份是机器第一次读出来的。两者不一致时，能看出是"解析错了"还是"用户改了"。
+    parsed: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 经理的复述（§2.1 步骤②）。确认的是这句话，不是 `raw_text` —— 把关点在这。
+    objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ---- §2.2 的维度。空 = 用户没说，**不是"用默认值"** ----
+    symbols: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_drawdown_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    horizon_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    autonomy: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # ---- ADR-033：本金有两个口径，**两个都得看得见** ----
+    # 口述的是"用户以为自己在拿多少钱试水"，实际权益是"账户里真有那么多"。
+    # 收益率一律按后者算；两者长期不一致时，这个不一致本身是复盘时要看的东西。
+    stated_capital: Mapped[float | None] = mapped_column(Float, nullable=True)
+    baseline_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # ---- ADR-021：风控参数在 `active` 那一刻固化，之后只读 ----
+    risk_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # 计划（C-4 填）。填上之后 trade_logs / decision_logs 的 goal_id/plan_id 才有生产者。
+    plan_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    confirmed_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 时间窗到期是**硬性终止条件**（§2.3，由代码判定），所以要有个钉死的时刻可比，
+    # 而不是每次拿浮点小时数重算一遍。
+    deadline_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    ended_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+Index("idx_goals_status", GoalLog.status)
+Index("idx_goals_created", GoalLog.created_at.desc())
+
+
+class MessageLog(Base):
+    """会话消息。**"会话重启后上下文不丢"靠的就是它**（§6.5 验收第 4 条）。
+
+    只存"说了什么"。这一轮该做什么、目标现在是什么状态，都是 `goals` 那一行的事 ——
+    两边各存一份意图，迟早会不一致。
+    """
+
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    goal_id: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_messages_goal", MessageLog.goal_id, MessageLog.created_at)
+

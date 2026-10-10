@@ -3,9 +3,30 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from agent.config import Settings
 from agent.main import app
+from agent.storage import database
 from agent.storage.database import close_db, init_db
 from agent.storage.repository import DecisionRepository, TradeRepository
+
+
+@pytest.fixture(autouse=True)
+async def _temp_db(tmp_path, monkeypatch):
+    """**必须用临时库。**
+
+    这个文件原先直连 `data/bianca.db`：每跑一次全量测试就往真实库里灌 6 行
+    `obs-*`，并对真实 schema 跑了 `init_db()`。后果不只是脏数据 —— A-4 的核对
+    脚本正是被这些行骗过：`context` 非空的行数从 9 涨到 15，脚本把它们读成了
+    "A-4 已生效"（见 §6.3「被实测推翻的三处」第 3 条）。
+
+    测试库一旦和真实库同名，任何"读真实库做统计"的核对都不再可信。
+    """
+    await close_db()
+    url = f"sqlite+aiosqlite:///{tmp_path.as_posix()}/observability.db"
+    monkeypatch.setattr(database, "get_settings", lambda: Settings(database_url=url))
+    await init_db()
+    yield
+    await close_db()
 
 
 @pytest.fixture

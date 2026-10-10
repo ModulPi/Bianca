@@ -14,9 +14,14 @@ from agent.api.schemas import (
     BalanceResponse,
     DecisionListResponse,
     DecisionLogItem,
+    DrawdownResetRequest,
+    DrawdownResetResponse,
     HealthResponse,
     MarketStatusResponse,
     MessageResponse,
+    OrderItem,
+    OrderListResponse,
+    PortfolioResponse,
     RiskEventItem,
     RiskEventListResponse,
     TickerResponse,
@@ -33,7 +38,13 @@ from agent.llm.analyzer import check_llm
 from agent.market.collector import get_collector, market_health, market_status_detail
 from agent.runner import get_runner
 from agent.storage.database import get_engine
-from agent.storage.repository import DecisionRepository, RiskEventRepository, TradeRepository
+from agent.storage.repository import (
+    DecisionRepository,
+    EquityRepository,
+    OrderRepository,
+    RiskEventRepository,
+    TradeRepository,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -257,6 +268,81 @@ async def get_trade(trade_id: str) -> TradeLogItem:
     )
 
 
+@router.get("/orders", response_model=OrderListResponse)
+async def list_orders(limit: int = 50) -> OrderListResponse:
+    """订单账本：交易所实际收到与回了什么。
+
+    与 `/trades` 的分工：`/trades` 是**决策**流水（含 HOLD 与被风控拦下的），
+    `/orders` 是**真实提交**过的订单回执。对账与归因看这里。
+    """
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    repo = OrderRepository()
+    rows = await repo.list_recent(limit=limit)
+    items = [
+        OrderItem(
+            id=r.id,
+            client_order_id=r.client_order_id,
+            trade_id=r.trade_id,
+            decision_id=r.decision_id,
+            symbol=r.symbol,
+            side=r.side,
+            order_type=r.order_type,
+            amount_kind=r.amount_kind,
+            requested_amount=r.requested_amount,
+            status=r.status,
+            exchange_order_id=r.exchange_order_id,
+            filled_qty=r.filled_qty,
+            avg_price=r.avg_price,
+            cost_quote=r.cost_quote,
+            error=r.error,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        )
+        for r in rows
+    ]
+    return OrderListResponse(items=items, total=len(items))
+
+
+@router.post("/portfolio/snapshot", response_model=PortfolioResponse)
+async def capture_portfolio_snapshot() -> PortfolioResponse:
+    """拉一次真实的持仓与权益并落库（余额取交易所、价格取**实盘**）。
+
+    注意这是 POST：它会打交易所与实盘行情，并且**写一条快照**。
+    只想看数就 GET /portfolio。
+    """
+    from agent.portfolio.service import capture
+
+    try:
+        view = await capture()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=format_binance_error(exc)) from exc
+    data = view.as_dict()
+    data.pop("unmapped_symbols", None)  # 已折进 notes，避免 GET/POST 两条路不一致
+    return PortfolioResponse(**data)
+
+
+@router.get("/portfolio", response_model=PortfolioResponse)
+async def get_portfolio() -> PortfolioResponse:
+    """最近一次快照（只读，不打交易所）。没有快照时返回 404 而不是编一个 0。"""
+    row = await EquityRepository().latest()
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="尚无权益快照。POST /api/v1/portfolio/snapshot 采集一次。",
+        )
+    return PortfolioResponse(
+        captured_at=row.captured_at,
+        equity=row.equity,
+        cash_quote=row.cash_quote,
+        holdings_value=row.holdings_value,
+        unpriced=json.loads(row.unpriced),
+        positions=json.loads(row.positions),
+        gaps=json.loads(row.gaps),
+        notes=json.loads(row.notes),
+    )
+
+
 @router.get("/risk/events", response_model=RiskEventListResponse)
 async def list_risk_events(limit: int = 50) -> RiskEventListResponse:
     if limit < 1 or limit > 200:
@@ -274,6 +360,24 @@ async def list_risk_events(limit: int = 50) -> RiskEventListResponse:
         for r in rows
     ]
     return RiskEventListResponse(items=items, total=len(items))
+
+
+@router.post("/risk/reset-drawdown", response_model=DrawdownResetResponse)
+async def reset_drawdown_endpoint(body: DrawdownResetRequest) -> DrawdownResetResponse:
+    """把回撤峰值挪到当下，重新开始算（ADR-029 / ADR-030）。
+
+    这是**唯一能让回撤线松开的动作**，所以它是 POST、要理由、要留痕。
+    重置不会自愈也不删数据：历史快照一条不动，只是峰值改从这一刻往后看。
+
+    重置前后的账都报出来 —— 只看重置后的值看不出这次削掉了多少保护。
+    """
+    from dataclasses import asdict
+
+    from agent.portfolio.pnl import reset_drawdown
+
+    # 只读一次、落库与返回共用同一份 —— 否则接口说的和库里记的会是两笔账
+    result = await reset_drawdown(reason=body.reason)
+    return DrawdownResetResponse(reason=body.reason.strip(), **asdict(result))
 
 
 @router.post("/analysis/run", response_model=AnalysisResponse)

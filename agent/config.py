@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     # Risk
     max_trade_amount: float = Field(default=50.0, gt=0)
     daily_loss_limit: float = Field(default=100.0, gt=0)
+    # A-3：止损/回撤/仓位上限。见设计文档 §6.2 与 ADR-026~029。
+    # 止损基准是"从观测高点回撤"，不是成本价 —— 我们没有可信成本价（ADR-026）。
+    stop_loss_pct: float = Field(default=0.10, gt=0, lt=1)
+    stop_lookback_hours: int = Field(default=24, ge=1, le=720)
+    max_drawdown_pct: float = Field(default=0.05, gt=0, lt=1)
+    max_position_pct: float = Field(default=0.50, gt=0, le=1)
+    # 会真的下平仓单，留一个能关的总闸（ADR-027）
+    force_close_enabled: bool = True
 
     # Agent
     agent_tick_interval: int = Field(default=300, ge=10)

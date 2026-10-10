@@ -24,6 +24,23 @@ class ChatResult:
     usage: dict[str, Any] | None = None
 
 
+@dataclass
+class AnalysisRun:
+    """一次分析的**全部**输入与输出（ADR-019 / ADR-031）。
+
+    比一个四元组多的那两样，正是归因要的：`messages` 是**实际发出**的完整
+    prompt（重试过的话就是重试那份），`variant` 说明用的是哪一份 ——
+    否则事后看到 raw_output 也判断不出模型是被怎么问的。
+    """
+
+    signal: TradeSignal
+    raw_output: str
+    prompt_summary: str
+    usage: dict[str, int] | None = None
+    messages: list[dict[str, str]] | None = None
+    variant: str = "normal"
+
+
 HOLD_ON_FAILURE = TradeSignal(
     action="HOLD",
     symbol="BTCUSDT",
@@ -101,12 +118,11 @@ class MarketAnalyzer:
         )
         return result.content.strip()
 
-    async def analyze(
-        self, market_data: dict[str, Any]
-    ) -> tuple[TradeSignal, str, str, dict[str, int] | None]:
-        """
-        Run analysis on market snapshot.
-        Returns (signal, raw_output, prompt_summary, usage). usage 在调用失败时为 None。
+    async def analyze(self, market_data: dict[str, Any]) -> AnalysisRun:
+        """跑一次分析。返回 `AnalysisRun` —— 含**实际发出去**的 messages。
+
+        失败路径也要带 messages：超时那一笔恰恰最需要事后看到"我们问了什么、
+        多久没回"。没有 prompt 的失败记录等于什么都没记（ADR-019 / ADR-031）。
         """
         symbol = market_data.get("symbol") or self._settings.trade_symbol
         user_prompt = build_user_prompt(
@@ -116,41 +132,51 @@ class MarketAnalyzer:
         )
         prompt_summary = summarize_market_for_log(market_data)
 
-        try:
-            result = await self._chat(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                require_content=False,
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        variant = "normal"
+
+        def _run(signal: TradeSignal, raw: str, usage: dict[str, int] | None) -> AnalysisRun:
+            # messages 是**实际最后发出**的那一份：重试过的话，这里就是重试那份
+            return AnalysisRun(
+                signal=signal,
+                raw_output=raw,
+                prompt_summary=prompt_summary,
+                usage=usage,
+                messages=messages,
+                variant=variant,
             )
+
+        try:
+            result = await self._chat(messages, require_content=False)
             if not result.content.strip():
                 # 推理模型常把 token 全耗在思考上导致 content 为空：提示简短作答再试一次
                 logger.warning("LLM reasoning exhausted tokens, retrying with brevity hint")
                 brevity_system = SYSTEM_PROMPT + "\n\nThink very briefly, then output only the JSON."
-                result = await self._chat(
-                    [
-                        {"role": "system", "content": brevity_system},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    require_content=False,
-                )
+                messages = [
+                    {"role": "system", "content": brevity_system},
+                    {"role": "user", "content": user_prompt},
+                ]
+                variant = "brevity"
+                result = await self._chat(messages, require_content=False)
             if not result.content.strip():
                 raise ValueError("Empty LLM response content")
             signal = parse_trade_signal(result.content, default_symbol=symbol)
-            return signal, result.content, prompt_summary, result.usage
+            return _run(signal, result.content, result.usage)
         except httpx.TimeoutException:
             logger.warning("LLM request timed out, defaulting to HOLD")
             signal = HOLD_ON_FAILURE.model_copy(
                 update={"symbol": symbol, "reason": "LLM 请求超时，降级为 HOLD"}
             )
-            return signal, "", prompt_summary, None
+            return _run(signal, "", None)
         except Exception as exc:  # noqa: BLE001
             logger.exception("LLM analysis failed: %s", exc)
             signal = HOLD_ON_FAILURE.model_copy(
                 update={"symbol": symbol, "reason": f"LLM 调用失败: {exc}"}
             )
-            return signal, str(exc), prompt_summary, None
+            return _run(signal, str(exc), None)
 
 
 def parse_trade_signal(raw: str, *, default_symbol: str) -> TradeSignal:

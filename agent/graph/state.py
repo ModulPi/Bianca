@@ -14,3 +14,9 @@ class TradeState(TypedDict, total=False):
     trade_log_id: str | None
     status: str
     message: str
+    # 归因链的链头（ADR-019 R1）：目标 → 计划 → 判断 → 信号 → 风控 → 订单。
+    # 阶段 C 才会有 goal 实体，但通道**现在就得在**：LangGraph 只传递 Schema 里
+    # 声明过的键，没声明的会被静默丢掉 —— 节点里那些 `state.get("goal_id")`
+    # 会永远拿到 None，而列建好了、看着像是通的。
+    goal_id: str | None
+    plan_id: str | None

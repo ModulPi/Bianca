@@ -18,6 +18,8 @@
 | 部署 | Docker(API) + SQLite |
 | 界面 | CLI / curl（无 Web 前端） |
 
+**下一步方向（目标驱动，见 [PRD §2.4](docs/PRD-Bianca.md) 与 [经理 Agent 与对话层设计](docs/outline-design/模块设计/经理Agent与对话层设计-Bianca.md)）：** 用户以对话方式给出一个交易目标，由**经理 Agent** 理解目标、指挥手下的子 Agent（行情 / 分析 / 风控 / 执行）执行并追踪进度，直到达成 / 中止 / 到期。**该方向的授权级别等关键边界尚未拍板，实现未开工。**
+
 ## 技术栈
 
 | 层级 | PoC | MVP（后续） |
@@ -40,6 +42,9 @@ docs/
 │   └── 容量规划报告-Bianca.md
 ├── outline-design/
 │   ├── 架构设计/架构设计文档-Bianca.md
+│   ├── 模块设计/
+│   │   ├── 行情数据模块设计-Bianca.md
+│   │   └── 经理Agent与对话层设计-Bianca.md
 │   └── 数据库设计/
 │       ├── 数据库设计文档-Bianca.md
 │       ├── 数据字典.md

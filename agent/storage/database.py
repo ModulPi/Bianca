@@ -29,11 +29,24 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 def _ensure_columns(sync_conn) -> None:
-    """SQLite 幂等迁移：create_all 不会给已有表加列，这里补齐缺失列。"""
+    """SQLite 幂等迁移：create_all 不会给已有表加列，这里补齐缺失列。
+
+    **线上库 `data/bianca.db` 里已经有数据**，所以加列只能走 ALTER TABLE ——
+    删表重建会把历史记录一起抹掉，那正是这套东西存在的理由。
+
+    SQLite 允许不带类型地 ADD COLUMN（新列是无类型/BLOB 亲和），存什么都行，
+    因此这里只写列名。旧行得到 NULL，正好表示"这条记录当时还没记这个"。
+    """
     insp = inspect(sync_conn)
     for table, cols in (
-        ("decision_logs", ("prompt_tokens", "completion_tokens", "total_tokens")),
-        ("trade_logs", ("decision_id",)),
+        ("decision_logs", (
+            "prompt_tokens", "completion_tokens", "total_tokens",
+            "prompt", "prompt_variant", "market_data", "goal_id", "plan_id",
+        )),
+        ("trade_logs", (
+            "decision_id",
+            "context", "equity", "positions", "goal_id", "plan_id",
+        )),
     ):
         existing = {c["name"] for c in insp.get_columns(table)}
         for col in cols:

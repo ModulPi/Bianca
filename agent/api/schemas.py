@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class HealthResponse(BaseModel):
@@ -21,7 +21,8 @@ class AgentStatusResponse(BaseModel):
     last_status: str | None = None
     last_error: str | None = None
     tick_count: int = 0
-    daily_pnl: float = 0.0
+    # 权益口径（含持仓浮亏）。None = 算不出来，不等于 0。
+    daily_pnl: float | None = None
     tick_interval: int = 300
     llm_auto_execute: bool = True
 
@@ -141,6 +142,35 @@ class TradeListResponse(BaseModel):
     total: int
 
 
+class OrderItem(BaseModel):
+    """订单账本条目。`status` 与 `filled` 是交易所的回执，不是我们的估计。"""
+
+    id: str
+    client_order_id: str
+    trade_id: str | None = None
+    decision_id: str | None = None
+    symbol: str
+    side: str
+    order_type: str
+    # amount_kind 必须一起给出：quote=计价币名义(USDT)，base=基础币数量。
+    # 只看 requested_amount 无法判断量纲。
+    amount_kind: str
+    requested_amount: float
+    status: str
+    exchange_order_id: str | None = None
+    filled_qty: float | None = None
+    avg_price: float | None = None
+    cost_quote: float | None = None
+    error: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class OrderListResponse(BaseModel):
+    items: list[OrderItem]
+    total: int
+
+
 class RiskEventItem(BaseModel):
     id: str
     event_type: str
@@ -152,6 +182,39 @@ class RiskEventItem(BaseModel):
 class RiskEventListResponse(BaseModel):
     items: list[RiskEventItem]
     total: int
+
+
+class DrawdownResetRequest(BaseModel):
+    """重置回撤基准。**reason 必填** —— 这是唯一能让回撤线松开的操作（ADR-030）。"""
+
+    reason: str = Field(min_length=1, description="为什么要重置；会写进 risk_events")
+
+    @field_validator("reason")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        """光有长度不够：`"   "` 也满足 `min_length=1`，但它不是理由。
+
+        不放行的话它会在 `reset_drawdown()` 里抛 `ValueError` 变成 500 ——
+        一个参数问题长得像服务端故障，排障时会往错的方向查。
+        """
+        if not value.strip():
+            raise ValueError("理由不能是空白")
+        return value.strip()
+
+
+class DrawdownResetResponse(BaseModel):
+    """重置**前后**都报出来。
+
+    只报重置后的值看不出这次操作削掉了多少保护 —— 而"削掉了多少"正是事后
+    要复盘的东西。字段与 `risk_events` 里那条 `drawdown_reset` 一一对应。
+    """
+
+    reset_at: str
+    reason: str
+    peak_before: float | None = None
+    current_equity: float | None = None
+    drawdown_before: float | None = None
+    previous_reset_at: str | None = None
 
 
 class UsageBucket(BaseModel):
@@ -226,3 +289,35 @@ class BackfillResponse(BaseModel):
     failed_chunks: int | None = None
     ranges: int | None = None
     duration_s: float | None = None
+
+
+class PositionItem(BaseModel):
+    asset: str
+    quantity: float
+    price: float | None = None
+    # None 表示取不到价 —— 不是"值 0"。此时该持仓不计入权益。
+    value_quote: float | None = None
+
+
+class HoldingGapItem(BaseModel):
+    """交易所持仓与本地账本归因之间的差。差分不为零**不代表出错**：
+    账户在 agent 上线前就有余额，那部分本来就解释不了。"""
+
+    asset: str
+    exchange_qty: float
+    attributed_qty: float
+    unexplained_qty: float
+
+
+class PortfolioResponse(BaseModel):
+    captured_at: str | None = None
+    equity: float
+    cash_quote: float
+    holdings_value: float
+    # 非空意味着 equity 只是下界 —— 有持仓取不到价，没被算进去。
+    unpriced: list[str] = []
+    positions: list[PositionItem] = []
+    gaps: list[HoldingGapItem] = []
+    # 无法参与归因的 symbol 与其它说明都折在这里：快照表只有这一列自由文本，
+    # 单独开一个字段会在 GET 路径上恒为空，那是个会骗人的字段。
+    notes: list[str] = []

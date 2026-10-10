@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from agent.config import Settings, get_settings
 from agent.graph.supervisor import run_agent_tick
-from agent.storage.repository import AgentConfigRepository
+from agent.portfolio.pnl import daily_pnl as compute_daily_pnl
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,8 @@ class RunnerSnapshot:
     last_status: str | None = None
     last_error: str | None = None
     tick_count: int = 0
-    daily_pnl: float = 0.0
+    # None 表示**算不出来**（今天还没有权益基准），不是 0 —— 见 portfolio/pnl.py
+    daily_pnl: float | None = None
     tick_interval: int = 300
     llm_auto_execute: bool = True
 
@@ -64,15 +65,14 @@ class AgentRunner:
 
     async def get_snapshot(self) -> RunnerSnapshot:
         settings = get_settings()
-        pnl_repo = AgentConfigRepository()
-        daily_pnl = await pnl_repo.get_daily_pnl()
+        snapshot = await compute_daily_pnl()
         return RunnerSnapshot(
             running=self._snapshot.running,
             last_tick=self._snapshot.last_tick,
             last_status=self._snapshot.last_status,
             last_error=self._snapshot.last_error,
             tick_count=self._snapshot.tick_count,
-            daily_pnl=daily_pnl,
+            daily_pnl=snapshot.pnl,
             tick_interval=settings.agent_tick_interval,
             llm_auto_execute=settings.llm_auto_execute,
         )

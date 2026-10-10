@@ -73,3 +73,22 @@ async def test_runner_records_tick(client):
     snap = await runner.get_snapshot()
     assert snap.tick_count >= 1
     assert snap.last_status == "filled"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_failure_does_not_kill_the_tick(client, caplog):
+    """权益快照取不到，整轮 tick 不许崩。
+
+    取不到快照的后果由风控承担：它拿到"日盈亏未知"并拦住新仓 ——
+    这是一个**保守**的失败，比 tick 直接崩掉、什么都没记要好。
+    """
+    from agent.graph.supervisor import _capture_equity_snapshot
+
+    async def boom():
+        raise RuntimeError("交易所连不上")
+
+    with patch("agent.portfolio.service.capture", boom):
+        with caplog.at_level("WARNING"):
+            await _capture_equity_snapshot()  # 不抛
+
+    assert "权益快照采集失败" in caplog.text

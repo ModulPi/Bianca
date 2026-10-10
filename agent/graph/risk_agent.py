@@ -6,8 +6,13 @@ from typing import Any
 
 from agent.config import Settings, get_settings
 from agent.graph.state import TradeState
+from agent.portfolio.valuation import positions_to_rows
 from agent.risk.engine import RiskEngine
-from agent.storage.repository import RiskEventRepository, TradeRepository
+from agent.storage.repository import (
+    RiskEventRepository,
+    TradeRepository,
+    decision_context,
+)
 
 
 async def run_risk_agent(state: TradeState, *, settings: Settings | None = None) -> TradeState:
@@ -16,13 +21,16 @@ async def run_risk_agent(state: TradeState, *, settings: Settings | None = None)
     market_data = state.get("market_data") or {}
 
     engine = RiskEngine(cfg)
-    verdict = await engine.evaluate(signal, market_data)
+    # 裁决**连同它的输入**取回来：那份 RiskContext 就是 R3 的答案（ADR-019）。
+    # 记它，而不是事后再读一次库 —— 再读的可能已经不是裁决时那一份了。
+    verdict, ctx = await engine.evaluate_detailed(signal, market_data)
 
     trade_repo = TradeRepository()
     risk_repo = RiskEventRepository()
     trade_id = state.get("trade_log_id") or str(uuid.uuid4())
 
     risk_decision = "approved" if verdict.approved else "rejected"
+    positions = positions_to_rows(ctx.positions)
     await trade_repo.save_signal(
         trade_id=trade_id,
         signal=signal,
@@ -31,6 +39,17 @@ async def run_risk_agent(state: TradeState, *, settings: Settings | None = None)
         risk_reason=None if verdict.approved else verdict.reason,
         status="failed" if not verdict.approved else "submitted",
         decision_id=state.get("decision_id"),
+        context=decision_context(
+            market_data,
+            equity=ctx.equity,
+            positions=positions,
+            highs=dict(ctx.highs),
+            drawdown_pct=ctx.drawdown_pct,
+        ),
+        equity=ctx.equity,
+        positions=positions,
+        goal_id=state.get("goal_id"),
+        plan_id=state.get("plan_id"),
     )
 
     if not verdict.approved and verdict.rule:

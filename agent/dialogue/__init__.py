@@ -18,15 +18,20 @@ from agent.dialogue.goal import (
     risk_snapshot,
 )
 from agent.dialogue.retell import retell
+from agent.dialogue.session import ROLE_ASSISTANT, ROLE_USER, Dialogue, Reply
 
 __all__ = [
     "AUTONOMY_FULL",
     "REQUIRED_FIELDS",
     "RISK_PARAM_FIELDS",
+    "ROLE_ASSISTANT",
+    "ROLE_USER",
     "TERMINAL",
+    "Dialogue",
     "Extract",
     "GoalDraft",
     "GoalStatus",
+    "Reply",
     "activation_times",
     "check_transition",
     "effective_drawdown_limit",

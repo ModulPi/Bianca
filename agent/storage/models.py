@@ -191,6 +191,8 @@ class GoalLog(Base):
     # ---- §2.2 的维度。空 = 用户没说，**不是"用默认值"** ----
     symbols: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 用户直接说的**绝对**目标权益（「做到 1100」），与上面那个百分比口径并列留着。
+    target_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_drawdown_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     horizon_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
     autonomy: Mapped[str | None] = mapped_column(String, nullable=True)

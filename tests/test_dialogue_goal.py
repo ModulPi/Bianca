@@ -14,7 +14,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -266,19 +268,22 @@ async def test_a_corrupt_symbols_column_is_not_read_as_user_silence(db):
     """坏掉的 JSON **不能退回 None** —— None 的含义是"用户没说标的范围"，
     而真相是记录坏了。把后者说成前者，等于替一条烂记录编一个合理的解释。"""
 
-    class _Row:
-        id = "g1"
-        raw_text = GOAL_TEXT
-        objective = None
-        symbols = "BTCUSDT"  # 不是 JSON —— 有人手改过库
-        target_return_pct = 0.1
-        max_drawdown_pct = 0.05
-        horizon_hours = 336.0
-        stated_capital = 1000.0
-        autonomy = "full"
+    # 其余字段从 `GoalDraft` 自己的定义里长出来，**不手写** —— 手写的那版在
+    # 加 `target_equity` 时悄悄烂掉了（`'_Row' object has no attribute ...`），
+    # 而它烂掉的方式是"测别的东西时报一个跟本意无关的错"。
+    row = SimpleNamespace(
+        id="g1",
+        raw_text=GOAL_TEXT,
+        symbols="BTCUSDT",  # 不是 JSON —— 有人手改过库
+        **{
+            f.name: None
+            for f in fields(GoalDraft)
+            if f.name not in ("raw_text", "symbols")
+        },
+    )
 
     with pytest.raises(ValueError, match="不是合法 JSON"):
-        GoalDraft.from_row(_Row())
+        GoalDraft.from_row(row)
 
 
 async def test_messages_survive_a_restart_in_order(db):

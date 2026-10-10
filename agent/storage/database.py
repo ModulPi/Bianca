@@ -47,6 +47,9 @@ def _ensure_columns(sync_conn) -> None:
             "decision_id",
             "context", "equity", "positions", "goal_id", "plan_id",
         )),
+        # `goals` 是 C-1 才建的表，但"已经跑过一次 C-1 的库"是存在的 ——
+        # 那时它没有 `target_equity`。create_all 不会给已有表补列，所以列在这里。
+        ("goals", ("target_equity",)),
     ):
         existing = {c["name"] for c in insp.get_columns(table)}
         for col in cols:

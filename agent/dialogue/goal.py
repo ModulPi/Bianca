@@ -112,6 +112,11 @@ class GoalDraft:
     objective: str | None = None
     symbols: list[str] | None = None
     target_return_pct: float | None = None
+    #: 用户直接说的**绝对**目标权益（「两周内做到 1100」）。§2.2 把收益目标定成
+    #: 百分比，但用户常常说的是绝对数 —— 两个都留着（同 ADR-033 的路子）。
+    #: 事后要能看出他当时说的到底是「+10%」还是「1100 这个数」，因为账户实际权益
+    #: 不是 1000 时，这两句话导出的目标是**不一样**的。
+    target_equity: float | None = None
     max_drawdown_pct: float | None = None
     horizon_hours: float | None = None
     stated_capital: float | None = None
@@ -126,6 +131,7 @@ class GoalDraft:
         "objective",
         "symbols",
         "target_return_pct",
+        "target_equity",
         "max_drawdown_pct",
         "horizon_hours",
         "stated_capital",

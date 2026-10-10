@@ -4,6 +4,7 @@
 C-4 计划落库。**C 不下单** —— 这一层的终点是"一个有计划的 active 目标"。
 """
 
+from agent.dialogue.extract import Extract, extract
 from agent.dialogue.goal import (
     AUTONOMY_FULL,
     REQUIRED_FIELDS,
@@ -13,17 +14,23 @@ from agent.dialogue.goal import (
     GoalStatus,
     activation_times,
     check_transition,
+    effective_drawdown_limit,
     risk_snapshot,
 )
+from agent.dialogue.retell import retell
 
 __all__ = [
     "AUTONOMY_FULL",
     "REQUIRED_FIELDS",
     "RISK_PARAM_FIELDS",
     "TERMINAL",
+    "Extract",
     "GoalDraft",
     "GoalStatus",
     "activation_times",
     "check_transition",
+    "effective_drawdown_limit",
+    "extract",
+    "retell",
     "risk_snapshot",
 ]

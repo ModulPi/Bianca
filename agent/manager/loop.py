@@ -117,12 +117,17 @@ class Manager:
     # -- 与模型说话 ---------------------------------------------------------
 
     async def _http_chat(self, messages: list[dict[str, Any]]) -> Reply:
-        """**带 `tools` 字段**（§6.4.1：后端换成 DeepSeek 官方 API 之后走原生通道）。
+        """带上 `tools` 字段 —— **但别以为它管用。**
 
-        §5.1 的四次实测里，`tools` 字段失败是 **Ollama 那条链路**的毛病
-        （llama.cpp 的 PEG 解析器与 GGUF 内嵌模板对不上），不是这个协议本身的问题。
-        回退到本地模型时，这里得去掉 `tools`，并把工具清单交还给 `prompt.build_system_prompt()`
-        —— 那条路已经能跑，解析器的 `deepseek` / `fenced` 通道也还留着。
+        §6.4.1 曾以为「换官方 API 之后就能走原生通道」，**§6.4.3 的实测推翻了它**：
+        对 `deepseek-flash` 连发 `tools` + `tool_choice=auto`，它照样把调用写在
+        `content` 正文里（`shape='deepseek'`），从没填过 `tool_calls`。
+        真正扛事的一直是 `parser.py` 那层客户端解析 —— 从 B-1 到现在都是。
+
+        **那为什么还留着？** 因为它几乎不要钱（这部分 prompt 命中缓存），
+        而一旦换到真会填 `tool_calls` 的模型，`_parse_structured` 那条通道会自动生效，
+        不用改代码。留着的是**可能性**，不是**能力**。
+        谁要摘掉它，先去翻 §6.4.3，别照着 §6.4.1 的旧说法做决定。
         """
         payload = {
             "model": self._endpoint.model,

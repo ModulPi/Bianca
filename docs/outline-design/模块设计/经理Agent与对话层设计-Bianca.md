@@ -291,8 +291,12 @@ B-1/B-2 按方案 B 落地并全部通过后，用户决定**暂时改走 DeepSe
 不是方案 B 本身有问题。**Ollama 那条线没有作废**：§5.1 的四次实测结论仍然成立，
 代码保留回退路径（见 §6.4.1）。本地 `ollama serve` 已停回接手前的状态（未运行）。
 
-**遗留物（可随时撤销）：** 本地多了一个 `bianca-tools:latest` tag（复用原 blob，未改动
-`deepseek-r1:latest`）；探针脚本在 `.tmp-probe/`。
+**遗留物（2026-10-11 已清）。** 曾经的 `bianca-tools:latest` tag 已用 `ollama rm` 摘掉 ——
+它与 `deepseek-r1:latest` **共用同一个 5.2GB 模型层**（manifest 里那一层的摘要逐字节相同），
+所以摘下它释放 **0 字节**，`deepseek-r1` 未受影响（已用 `/api/show` 验证仍可解析）。
+方案 A 的 Modelfile 配方保留在 `scripts/Modelfile.bianca-tools`，配
+`scripts/check_llm_tools.py` 一起，本地线要重启时照着 `ollama create -f` 即可。
+临时探针目录 `.tmp-probe/` 已整个删除（其内容是可再生的探测脚本与变异测试备份）。
 
 
 ---

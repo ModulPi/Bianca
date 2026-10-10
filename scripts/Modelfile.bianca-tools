@@ -1,0 +1,52 @@
+FROM deepseek-r1:latest
+TEMPLATE """{{- if .Messages }}
+{{- if or .System .Tools }}<|im_start|>system
+{{- if .System }}
+{{ .System }}
+{{- end }}
+{{- if .Tools }}
+
+# Tools
+
+You have access to the following functions. Use them to get real data instead of guessing.
+
+<tools>
+{{- range .Tools }}
+{"type": "function", "function": {{ .Function | json }}}
+{{- end }}
+</tools>
+
+When you need to call a function, reply with ONLY the block below and nothing else —
+no explanation, no code fences, no text before or after:
+
+<tool_call>
+{"name": "get_position", "arguments": {"asset": "BTC"}}
+</tool_call>
+
+Replace the name and arguments with the ones you actually need. Do not invent
+function names that are not listed above.
+{{- end }}<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ if .Content }}{{ .Content }}{{ end }}{{ if .ToolCalls }}{{ range .ToolCalls }}
+<tool_call>
+{"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}}
+</tool_call>{{ end }}{{ end }}
+{{- if not $last }}<|im_end|>
+{{ end }}
+{{- else if eq .Role "tool" }}<|im_start|>user
+<tool_response>
+{{ .Content }}
+</tool_response><|im_end|>
+{{ end }}
+{{- if and $last (ne .Role "assistant") }}<|im_start|>assistant
+{{ end }}
+{{- end }}
+{{- end }}"""
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER stop <|im_end|>

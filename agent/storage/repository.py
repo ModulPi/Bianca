@@ -7,12 +7,14 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent.config import Settings
 from agent.dialogue.goal import (
     TERMINAL,
     GoalDraft,
     GoalStatus,
     activation_times,
     check_transition,
+    risk_snapshot,
 )
 from agent.storage.database import get_session_factory
 from agent.storage.models import (
@@ -662,14 +664,19 @@ class GoalRepository:
         goal_id: str,
         *,
         equity: float,
-        risk: dict,
+        settings: Settings,
         now: datetime | None = None,
     ) -> GoalLog:
         """确认 → `active`。**这一步把风控参数钉死**（ADR-021 / ADR-033）。
 
-        `equity` 与 `risk` 由调用方传进来（权益来自账户快照、风控来自 `Settings`），
-        这里不自己去查 —— 让"激活用的到底是哪一刻的权益"在调用处看得见。
-        **权益拿不到时不要调这里**：没有基准就没法算"离目标还差多少"（ADR-033）。
+        `equity` 由调用方传进来（它来自账户快照，本仓库不在这里替你去查那个 ——
+        让"激活用的到底是哪一刻的权益"在调用处看得见）。**权益拿不到时不要调这里**：
+        没有基准就没法算"离目标还差多少"（ADR-033）。
+
+        风控快照则**在这里现算**，不接受调用方递一份现成的进来。理由很实际：
+        「用户说的回撤上限取更紧的那个」这条规则，只要调用方哪天忘了把目标里那个数
+        带上，就会**静默失效** —— 而失效的表现是风控被放宽，不是报错。
+        这类东西不能靠调用方记得。
         """
         factory = get_session_factory()
         async with factory() as db:
@@ -688,7 +695,11 @@ class GoalRepository:
             row.confirmed_at = confirmed_at
             row.deadline_at = deadline_at
             row.baseline_equity = equity
-            row.risk_snapshot = json.dumps(risk, ensure_ascii=False)
+            # `missing()` 里含 `max_drawdown_pct`，所以走到这里它必定不是 None。
+            row.risk_snapshot = json.dumps(
+                risk_snapshot(settings, stated_drawdown=row.max_drawdown_pct),
+                ensure_ascii=False,
+            )
             await db.commit()
             await db.refresh(row)
             return row

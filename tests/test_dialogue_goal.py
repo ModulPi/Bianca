@@ -23,6 +23,7 @@ from agent.dialogue.goal import (
     GoalDraft,
     GoalStatus,
     check_transition,
+    effective_drawdown_limit,
     risk_snapshot,
 )
 from agent.storage import database
@@ -54,10 +55,10 @@ def _complete_draft() -> GoalDraft:
     )
 
 
-async def _activated(equity: float = 1000.0):
+async def _activated(equity: float = 1000.0, *, settings: Settings | None = None):
     repo = GoalRepository()
     row = await repo.create(raw_text=GOAL_TEXT, draft=_complete_draft())
-    return await repo.activate(row.id, equity=equity, risk=risk_snapshot(Settings()))
+    return await repo.activate(row.id, equity=equity, settings=settings or Settings())
 
 
 # --- ① 空就是空 ---------------------------------------------------------------
@@ -109,7 +110,7 @@ async def test_activation_refuses_a_goal_that_is_still_missing_dimensions(db):
     repo = GoalRepository()
     row = await repo.create(raw_text="随便做点啥")
     with pytest.raises(ValueError, match="没定下来的维度"):
-        await repo.activate(row.id, equity=1000.0, risk=risk_snapshot(Settings()))
+        await repo.activate(row.id, equity=1000.0, settings=Settings())
     assert (await repo.get(row.id)).status == GoalStatus.PROPOSED.value
 
 
@@ -120,7 +121,7 @@ async def test_activation_freezes_the_risk_params_against_later_settings_changes
     row = await GoalRepository().activate(
         (await GoalRepository().create(raw_text=GOAL_TEXT, draft=_complete_draft())).id,
         equity=1000.0,
-        risk=risk_snapshot(frozen),
+        settings=frozen,
     )
 
     snapshot = json.loads(row.risk_snapshot)
@@ -131,6 +132,47 @@ async def test_activation_freezes_the_risk_params_against_later_settings_changes
     assert loosened["max_drawdown_pct"] == 0.5
     assert json.loads((await GoalRepository().get(row.id)).risk_snapshot)["max_drawdown_pct"] == 0.05
     assert snapshot["stop_loss_pct"] == frozen.stop_loss_pct
+
+
+async def test_the_tighter_drawdown_line_wins(db):
+    """**2026-10-11 拍板：用户说的与配置里的，取更紧的那个。**
+
+    用户能要求更严，但不能一句话把系统设的闸门放宽 —— ADR-021 的整条理由就是
+    "风控一旦可被被约束者修改，它就不再是边界"。"""
+    repo = GoalRepository()
+    draft = _complete_draft()
+    draft.max_drawdown_pct = 0.20  # 用户想宽到 20%
+
+    row = await repo.create(raw_text=GOAL_TEXT, draft=draft)
+    activated = await repo.activate(
+        row.id, equity=1000.0, settings=Settings(max_drawdown_pct=0.03)
+    )
+
+    assert activated.max_drawdown_pct == 0.20, "用户的原话要原样留着（ADR-019）"
+    assert json.loads(activated.risk_snapshot)["max_drawdown_pct"] == 0.03, "生效的是更紧的那个"
+
+
+async def test_a_stricter_user_line_is_honoured(db):
+    """反过来：用户要求更严（2%），那就按 2% —— 取紧的，不是「一律以配置为准」。"""
+    repo = GoalRepository()
+    draft = _complete_draft()
+    draft.max_drawdown_pct = 0.02
+
+    row = await repo.create(raw_text=GOAL_TEXT, draft=draft)
+    activated = await repo.activate(
+        row.id, equity=1000.0, settings=Settings(max_drawdown_pct=0.05)
+    )
+    assert json.loads(activated.risk_snapshot)["max_drawdown_pct"] == 0.02
+
+
+def test_the_drawdown_rule_is_one_comparison_in_one_place():
+    """规则只有一份。`effective_drawdown_limit` 说错一个字，整个目标的风控线就错 ——
+    所以这里把三种情形一次钉死：没提 / 更宽 / 更严。"""
+    strict = Settings(max_drawdown_pct=0.03)
+    assert effective_drawdown_limit(strict, None) == 0.03, "用户没提就按配置"
+    assert effective_drawdown_limit(strict, 0.20) == 0.03, "更宽 → 配置赢"
+    assert effective_drawdown_limit(strict, 0.01) == 0.01, "更严 → 用户赢"
+    assert effective_drawdown_limit(strict, 0.03) == 0.03, "一样 → 谁赢都一样"
 
 
 async def test_activation_keeps_both_capital_figures_apart(db):

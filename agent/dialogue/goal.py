@@ -195,22 +195,40 @@ RISK_PARAM_FIELDS: tuple[str, ...] = (
 )
 
 
-def risk_snapshot(settings: Settings) -> dict[str, Any]:
+def effective_drawdown_limit(settings: Settings, stated: float | None) -> float:
+    """生效的回撤上限。**取更紧的那个**（2026-10-11 拍板）。
+
+    用户能要求更严（说 2% 就按 2%），但**不能一句话把系统设的闸门放宽** ——
+    ADR-021 的整条理由就是"风控一旦可被被约束者修改，它就不再是边界"。
+    `stated` 为 `None` 表示用户没提，那就按配置来。
+
+    取更紧的那个有一个代价，得说出来：用户说「亏到 5% 就停」而配置是 3% 时，
+    实际会**提前**在 3% 停。所以复述（§2.1 步骤②）必须把**生效值**讲清楚，
+    否则用户是照着一个不存在的前提在确认。
+    """
+    config = float(settings.max_drawdown_pct)
+    if stated is None:
+        return config
+    return min(config, float(stated))
+
+
+def risk_snapshot(
+    settings: Settings, *, stated_drawdown: float | None = None
+) -> dict[str, Any]:
     """`active` 那一刻把风控参数抄一份下来。
 
     ADR-021 说"执行期间只读" —— **落地判据就是这一份快照**：之后凡是读风控的
     地方读它，不读 `settings`。否则改一次 `.env` 就绕过去了：目标还在跑，
     它的止损线却悄悄换了，且没有一行记录说明它变过。
 
-    **未决（写在代码里，别让它烂成"看起来没问题"）：**
-    `goals.max_drawdown_pct`（用户说的）与这里抄下来的 `max_drawdown_pct`
-    （引擎配置的）是**同一个数的两个来源**，而 C-1 这一版只抄 `Settings`，
-    用户的那个数并没有进快照。于是"用户说最多亏 5%、配置里是 3%"时谁说了算，
-    现在没有答案。这是 ADR-021 没说透的那一半（它只说"固化"，没说
-    "用户能不能改设定值，以及能不能改得更宽"）。**定下来之前不许把任何一个
-    悄悄当成生效值** —— 见 §6.5 末的待决项。
+    其中 `max_drawdown_pct` **不是照抄配置** —— 见 `effective_drawdown_limit()`：
+    用户说的那个数只在更紧时才生效。两者不一致时，**快照里那个就是实际生效值**，
+    而 `goals.max_drawdown_pct` 是用户的原话；事后对比这两列，就能看出当时是
+    谁定的、以及用户那句「5%」有没有真的生效。
     """
-    return {name: getattr(settings, name) for name in RISK_PARAM_FIELDS}
+    snapshot = {name: getattr(settings, name) for name in RISK_PARAM_FIELDS}
+    snapshot["max_drawdown_pct"] = effective_drawdown_limit(settings, stated_drawdown)
+    return snapshot
 
 
 def _now() -> datetime:

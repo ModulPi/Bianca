@@ -32,6 +32,9 @@ Thumbs.db
 logs/
 data/
 
+# 临时探针（§5.1 实测用的脚本与备份，可随时整个删掉）
+.tmp-probe/
+
 # Secrets
 *.pem
 *.key

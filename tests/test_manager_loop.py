@@ -115,6 +115,7 @@ async def test_plan_straight_away_without_any_tool_call():
     assert run.plan is not None
     assert run.plan_shape == "json"
     assert run.rounds == 1
+    assert run.shapes == ["text"], "每轮的形状要留痕，否则事后看不出它走的哪条路"
     assert run.invocations == []
     assert run.plan.steps[1].why, "每一步都该带依据"
     assert seen[0][0]["role"] == "system"
@@ -127,6 +128,7 @@ async def test_tool_call_then_plan_feeds_the_result_back():
     run = await mgr.plan("把回撤控制在 5% 以内")
 
     assert run.plan is not None
+    assert run.shapes == ["structured", "text"], "哪一轮走了原生通道，要看得出来"
     assert run.used_tools == ["get_drawdown"]
     assert run.invocations[0].ok is True
     assert run.invocations[0].result == {"available": True, "drawdown_pct": 0.02}

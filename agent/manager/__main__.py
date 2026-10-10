@@ -91,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
 
     section("3. 账")
     print(f"  轮次        {run.rounds}")
+    print(f"  每轮形状    {run.shapes or '（一轮都没跑成）'}")
     print(f"  plan_shape  {run.plan_shape}")
     print(f"  usage       {json.dumps(run.usage, ensure_ascii=False)}")
     if run.errors:

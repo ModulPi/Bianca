@@ -81,6 +81,9 @@ class ManagerRun:
     rounds: int = 0
     usage: dict[str, Any] | None = None
     errors: list[str] = field(default_factory=list)
+    # 每一轮模型是用哪种形状回的。**别省这一栏**：实测里第 1 轮它没用 `tools`
+    # 字段而是在正文里写原生格式，是这一栏才让人看出来的（§6.4.3）。
+    shapes: list[str] = field(default_factory=list)
 
     @property
     def used_tools(self) -> list[str]:
@@ -175,6 +178,7 @@ class Manager:
                 usage = reply.usage
 
             parsed, parse_error = self._interpret(reply)
+            run.shapes.append(parsed.shape if parsed is not None else "unparsed")
             if parse_error is not None:
                 run.errors.append(parse_error)
                 messages.append({"role": "assistant", "content": reply.content})

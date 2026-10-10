@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,15 +14,20 @@ class Settings(BaseSettings):
     )
 
     # Binance Demo spot
-    binance_api_key: str = ""
-    binance_api_secret: str = ""
+    # 密钥一律用 SecretStr。`Settings` 是会被传来传去的对象，它的 `repr` 会出现在
+    # 断言消息、日志和调试打印里 —— 裸 `str` 迟早会被某一条日志原样打出来，
+    # 而这件事**已经发生过**（2026-10-11：一条 pytest 断言把 `.env` 里的真 key
+    # 打进了输出）。要原文就显式调 `.get_secret_value()`：读密钥的地方在代码里看得见，
+    # 顺手把它塞进日志就没那么容易。
+    binance_api_key: SecretStr = SecretStr("")
+    binance_api_secret: SecretStr = SecretStr("")
     binance_demo_base_url: str = "https://demo-api.binance.com"
     # 大陆等地区需代理；Docker 内常用 http://host.docker.internal:7890
     binance_proxy: str = ""
 
     # LLM
     llm_provider: Literal["deepseek", "ollama"] = "deepseek"
-    llm_api_key: str = ""
+    llm_api_key: SecretStr = SecretStr("")
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
     llm_auto_execute: bool = True
@@ -94,13 +99,16 @@ class Settings(BaseSettings):
 
     @property
     def binance_configured(self) -> bool:
-        return bool(self.binance_api_key.strip() and self.binance_api_secret.strip())
+        return bool(
+            self.binance_api_key.get_secret_value().strip()
+            and self.binance_api_secret.get_secret_value().strip()
+        )
 
     @property
     def llm_configured(self) -> bool:
         if self.llm_provider == "ollama":
             return bool(self.llm_base_url.strip() and self.llm_model.strip())
-        return bool(self.llm_api_key.strip())
+        return bool(self.llm_api_key.get_secret_value().strip())
 
 
 @lru_cache

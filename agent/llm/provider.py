@@ -35,6 +35,6 @@ def resolve_llm_endpoint(settings: Settings) -> LLMEndpoint:
         provider="deepseek",
         model=settings.llm_model,
         chat_completions_url=url,
-        api_key=settings.llm_api_key.strip() or None,
+        api_key=settings.llm_api_key.get_secret_value().strip() or None,
         timeout=settings.llm_timeout,
     )

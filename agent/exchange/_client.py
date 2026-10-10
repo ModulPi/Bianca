@@ -8,8 +8,10 @@ from agent.config import Settings
 def build_binance_config(settings: Settings) -> dict[str, Any]:
     """Shared ccxt config for Binance Demo spot (REST + WebSocket)."""
     config: dict[str, Any] = {
-        "apiKey": settings.binance_api_key,
-        "secret": settings.binance_api_secret,
+        # `.get_secret_value()` 是**刻意写出来**的：密钥在 `Settings` 里是 `SecretStr`，
+        # 取原文就得显式要一次，这样"哪里读了密钥"在代码里一眼看得见。
+        "apiKey": settings.binance_api_key.get_secret_value(),
+        "secret": settings.binance_api_secret.get_secret_value(),
         "enableRateLimit": True,
         "options": {
             "defaultType": "spot",

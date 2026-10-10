@@ -22,6 +22,7 @@ from typing import Any
 from agent.config import Settings, get_settings
 from agent.exchange.indicators import rsi, sma
 from agent.manager.tools import ToolRegistry, ToolSpec
+from agent.market.collector import symbol_flow_verdict
 from agent.market.repository import KlineRepository
 from agent.portfolio.pnl import drawdown
 from agent.risk.rules import drawdown_breached
@@ -68,15 +69,37 @@ def _clamp(value: Any, *, low: int, high: int, fallback: int) -> int:
 # --- 各工具的实现 -----------------------------------------------------------
 
 
+def _snapshot_age_seconds(captured_at: Any) -> float | None:
+    """快照距今多少秒。算不出来就返回 None —— **不编一个 0**。"""
+    if not isinstance(captured_at, str) or not captured_at:
+        return None
+    try:
+        at = datetime.fromisoformat(captured_at)
+    except ValueError:
+        return None
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - at).total_seconds()
+
+
 async def _get_portfolio(args: dict[str, Any], settings: Settings) -> dict[str, Any]:
     row = await EquityRepository().latest()
     if row is None:
         return _unknown("还没有任何权益快照：采集侧还没跑过，此刻账户里有什么是未知的")
     gaps = _loads(row.gaps, [])
     unexplained = [g for g in gaps if abs(float(g.get("unexplained_qty") or 0.0)) > 0]
+    # 快照表的节奏不由 `_stale_after_s` 管，所以这里**只报事实、不编阈值**（§6.4.2）。
+    age = _snapshot_age_seconds(row.captured_at)
     return {
         "available": True,
         "captured_at": row.captured_at,
+        "age_seconds": age,
+        "age_note": (
+            None
+            if age is None
+            else f"这是 {age / 3600:.1f} 小时前的账户，不是此刻的 —— "
+            "期间可能已经成交、强平或分红"
+        ),
         "equity": row.equity,
         "cash_quote": row.cash_quote,
         "holdings_value": row.holdings_value,
@@ -103,6 +126,11 @@ async def _get_market(args: dict[str, Any], settings: Settings) -> dict[str, Any
     highs = [float(b["h"]) for b in bars]
     lows = [float(b["l"]) for b in bars]
     first, last = closes[0], closes[-1]
+
+    # 这数字有多旧 —— **判据复用采集侧那一份**，不在这里另立阈值（§6.4.2）。
+    # 少了这一段，16 天前的 K 线会被原样当成现价交出去。
+    data_status, lag_s, data_detail = await symbol_flow_verdict(symbol, interval, settings=settings)
+
     return {
         "available": True,
         "symbol": symbol,
@@ -116,6 +144,17 @@ async def _get_market(args: dict[str, Any], settings: Settings) -> dict[str, Any
         "change_pct": ((last - first) / first) if first else None,
         "sma20": sma(closes, 20),
         "rsi14": rsi(closes),
+        "data_status": data_status,
+        "data_status_detail": data_detail,
+        "data_lag_seconds": lag_s,
+        "stale": data_status != "ok",
+        "note": (
+            f"**这份行情已经停更 {lag_s} 秒**（{data_detail}）。"
+            "last_price / change_pct / sma20 / rsi14 说的都是那一刻，不是此刻 —— "
+            "据此做计划前先说明你要拿一个陈数据怎么办。"
+            if data_status != "ok"
+            else "行情是新鲜的"
+        ),
         "source": "本地行情库（实盘采集，见 ADR-013）",
     }
 
@@ -259,6 +298,8 @@ def build_readonly_registry(settings: Settings | None = None) -> ToolRegistry:
             description=(
                 "读本地行情库里某个交易对最近的 K 线摘要（高低、涨跌幅、SMA20、RSI14）。"
                 "行情来自实盘采集，与交易所在的 Demo 账户不是同一个来源（ADR-013）。"
+                "**先看 `data_status`：本地行情可能是停更的**，`stale=true` 时"
+                "那些价格说的是当时、不是此刻，别把它们当现价用。"
             ),
             parameters={
                 "type": "object",

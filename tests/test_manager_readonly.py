@@ -10,12 +10,14 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 
 from agent.config import Settings
 from agent.manager.readonly import build_readonly_registry
 from agent.market import storage as market_storage
+from agent.market.collector import market_health
 from agent.market.repository import KlineRepository
 from agent.storage import database
 from agent.storage.database import close_db, init_db
@@ -418,3 +420,94 @@ def test_tool_parameters_are_valid_json_schema():
         assert spec.parameters["type"] == "object"
         assert isinstance(spec.parameters.get("properties", {}), dict)
         assert json.dumps(spec.schema(), ensure_ascii=False)
+
+
+# --- 数据有多旧（§6.4.2）----------------------------------------------------
+
+
+def _bar_at(age_s: float, *, symbol: str = "BTCUSDT", interval: str = "1m") -> dict:
+    bar = _bar(0, symbol=symbol, interval=interval)
+    bar["time"] = int(datetime.now(UTC).timestamp() * 1000) - int(age_s * 1000)
+    bar["open"] = bar["high"] = bar["low"] = bar["close"] = 100.0
+    return bar
+
+
+def _market_settings(tmp_path, **kw):
+    return Settings(
+        trade_symbol="BTCUSDT",
+        market_symbols="BTCUSDT",
+        market_database_url=f"sqlite+aiosqlite:///{(tmp_path / 'market.db').as_posix()}",
+        **kw,
+    )
+
+
+@pytest.mark.asyncio
+async def test_market_says_so_when_the_data_has_stopped(market_db, tmp_path):
+    """**这是 §6.4.2 的正题。** 本地 K 线停在 16 天前时，原先它照回
+    `available: true` 加一个 `last_price` —— 模型没有任何线索能看出这是陈的。"""
+    await KlineRepository().insert_rows([_bar(i) for i in range(30)])
+    cfg = _market_settings(tmp_path)
+    out = await build_readonly_registry(cfg).call("get_market", {"symbol": "BTCUSDT"})
+
+    assert out["available"] is True, "有数据就是有数据，不该藏起来"
+    assert out["stale"] is True
+    assert out["data_status"] == "error"
+    assert out["data_lag_seconds"] > 1_000_000, "2023 年的 bar 距今约 3 年"
+    assert "停更" in out["note"]
+
+
+@pytest.mark.asyncio
+async def test_market_fresh_bar_is_not_flagged(market_db, tmp_path):
+    await KlineRepository().insert_rows([_bar_at(20), _bar_at(10)])
+    cfg = _market_settings(tmp_path)
+    out = await build_readonly_registry(cfg).call("get_market", {"symbol": "BTCUSDT"})
+
+    assert out["data_status"] == "ok"
+    assert out["stale"] is False
+    assert out["note"] == "行情是新鲜的"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("interval", "age_s", "expect"),
+    [
+        ("1m", 20, "ok"),
+        ("1m", 600, "error"),
+        # ↓ 判据的分水岭：1h 周期隔 200 秒不算停更。一个拍脑袋的固定 180 秒阈值
+        #   会说它停更了 —— 而 `_stale_after_s` 的注释里写着为什么不能那么拍
+        #   （固定阈值会让 1h 周期有 94% 的时间误报）。
+        ("1h", 200, "ok"),
+        ("1h", 20_000, "error"),
+    ],
+)
+async def test_market_staleness_reuses_the_data_plane_verdict(
+    market_db, tmp_path, interval, age_s, expect
+):
+    """**判据只有一份。** 与 `/health` 出口必须是同一个答案，
+    否则「这数据新不新」会分裂成两个口径 —— 而经理据此定计划、数据面据此报警。"""
+    await KlineRepository().insert_rows([_bar_at(age_s, interval=interval)])
+    cfg = _market_settings(tmp_path, market_interval=interval)
+
+    out = await build_readonly_registry(cfg).call("get_market", {"symbol": "BTCUSDT"})
+    plane_status, _ = await market_health(cfg)
+
+    assert out["data_status"] == expect
+    assert out["data_status"] == plane_status, "经理和数据面必须是同一个口径"
+
+
+@pytest.mark.asyncio
+async def test_portfolio_reports_the_snapshot_age(main_db):
+    await _snapshot(equity=100.0, captured_at="2026-10-10T17:06:30+00:00")
+    out = await _registry().call("get_portfolio", {})
+    assert out["available"] is True
+    assert out["age_seconds"] > 0
+    assert "小时前" in out["age_note"]
+
+
+@pytest.mark.asyncio
+async def test_portfolio_age_is_unknown_rather_than_zero(main_db):
+    """时间戳读不出来 → `None`。**不能报 0** —— 0 说的是「刚刚」，那是编的。"""
+    await _snapshot(equity=100.0, captured_at="不是个时间")
+    out = await _registry().call("get_portfolio", {})
+    assert out["age_seconds"] is None
+    assert out["age_note"] is None

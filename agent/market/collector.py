@@ -378,7 +378,21 @@ async def market_health(settings: Settings | None = None) -> tuple[str, str | No
     """
     cfg = settings or get_settings()
     symbol = cfg.market_symbol_list[0] if cfg.market_symbol_list else ""
-    interval = cfg.market_interval
+    verdict, _, detail = await symbol_flow_verdict(symbol, cfg.market_interval, settings=cfg)
+    return verdict, detail
+
+
+async def symbol_flow_verdict(
+    symbol: str, interval: str, *, settings: Settings | None = None
+) -> tuple[str, int | None, str]:
+    """某个标的的本地数据流动判定，返回 (verdict, lag_s, detail)。
+
+    **判据只有这一份。** `/health`、`/market/status` 和经理的 `get_market` 全走这里。
+    经理那条线一开始是自己读库、自己算摘要的，于是「这份数据还新不新」在它那里
+    根本没有答案 —— 16 天前的 K 线会被当成现价（见设计文档 §6.4.2）。
+    同一个概念分出两个口径，是最坏的一种分歧。
+    """
+    cfg = settings or get_settings()
     try:
         step_s: int | None = interval_ms(interval) // 1000
     except ValueError:
@@ -390,7 +404,7 @@ async def market_health(settings: Settings | None = None) -> tuple[str, str | No
 
     lock_state: LockState = probe_lock_state(cfg.market_database_url)
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
-    verdict, _, detail = _flow_verdict(
+    return _flow_verdict(
         symbol=symbol,
         interval=interval,
         step_s=step_s,
@@ -398,7 +412,6 @@ async def market_health(settings: Settings | None = None) -> tuple[str, str | No
         now_ms=now_ms,
         lock_state=lock_state,
     )
-    return verdict, detail
 
 
 def _collector_owner(collector: MarketCollector, lock_state: LockState) -> str:

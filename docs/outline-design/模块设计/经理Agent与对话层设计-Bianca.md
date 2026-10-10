@@ -856,6 +856,40 @@ API 的 function calling 是成熟的。**换后端之后，绕行的理由消�
 
 **验收不变：** 给一个目标，经理产出可读的分解计划与理由，**不产生任何订单**。
 
+#### 6.4.2 B-2 的一个漏洞：工具只报数，不报「这数有多旧」（2026-10-11 补）
+
+**怎么发现的。** 准备 B-3 真模型验收时先查了本地数据实况：
+
+| 数据 | 最新一条 | 距今 |
+|------|----------|------|
+| `market.db` BTCUSDT 1m K 线 | 2026-09-24T14:32Z | **16.2 天** |
+| `bianca.db` decision_logs / trade_logs | 2026-08-02T16:01Z | ~70 天 |
+| `bianca.db` equity_snapshots | 2026-10-10T17:06Z | ~1 天 |
+
+而 `get_market` 对 16 天前的 K 线照常返回 `{"available": true, "last_price": …}`，
+`change_pct` / `sma20` / `rsi14` 一应俱全 —— **模型没有任何线索能看出这是陈的**，
+只会当成现价去做计划。这和 §5.1 那个「编造 `get_balance` 并报出 0.00 BTC」是同一类：
+**下游拿到的是一个数字，不是一句猜测，所以没人会去质疑它。**
+
+**根因不是「少了个字段」，是判据没有复用。** 数据面早就有权威的新鲜度判定
+（`agent/market/collector.py` 的 `_flow_verdict` + `_stale_after_s`，`/health` 与
+`/market/status` 都由它出结论），但经理这条线自己去读库、自己算摘要，**绕过了它**。
+这与 §6.4 里「回撤那一版重造轮子」是同一个毛病：同一概念迟早会分裂成两个口径。
+
+**改法：**
+
+1. 把采集侧那段判定提取成公开的 `symbol_flow_verdict(symbol, interval, settings=…)`，
+   `market_health` 改为调它 —— **判据只有一份**，`/health` 与经理拿到同一个答案。
+2. `get_market` 的返回值加上 `data_status`（ok / warming_up / error）、
+   `data_status_detail`、`data_lag_seconds`、`stale`，并在停更时给一句 `note`。
+3. 工具描述里写明「**先看 `data_status`，这份数据可能是停更的**」——
+   光给字段不够，得让模型知道该看。
+4. `get_portfolio` 同理补 `age_seconds`（快照表的节奏不由 `_stale_after_s` 管，
+   所以这里**只报事实、不编阈值**）。
+
+**阈值不新造。** `_stale_after_s` 已经是 `max(180s, 3 个周期)`，且带着一条实测教训
+（固定 180s 会让 1h 周期有 94% 的时间误报）。再拍一个数只会多一个口径。
+
 ---
 
 ## 7. 能力边界决策（ADR-018~021，2026-10-11 拍板）

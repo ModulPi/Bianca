@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -32,7 +33,10 @@ async def test_agent_status_idle(client):
 
 @pytest.mark.asyncio
 async def test_agent_start_stop(client):
-    with patch("agent.runner.run_agent_tick", AsyncMock(return_value={"status": "signal_only"})):
+    with patch("agent.runner.run_goal_tick", AsyncMock(return_value={"status": "hold"})), patch(
+        "agent.runner.GoalRepository.active_goal",
+        AsyncMock(return_value=SimpleNamespace(id="g-1")),
+    ):
         with patch("agent.api.routes.get_settings") as mock_cfg:
             mock_cfg.return_value.llm_configured = True
             mock_cfg.return_value.agent_tick_interval = 60
@@ -63,7 +67,10 @@ async def test_agent_start_requires_llm(client):
 @pytest.mark.asyncio
 async def test_runner_records_tick(client):
     runner = AgentRunner()
-    with patch("agent.runner.run_agent_tick", AsyncMock(return_value={"status": "filled"})):
+    with patch("agent.runner.run_goal_tick", AsyncMock(return_value={"status": "filled"})), patch(
+        "agent.runner.GoalRepository.active_goal",
+        AsyncMock(return_value=SimpleNamespace(id="g-1")),
+    ):
         with patch("agent.runner.get_settings") as mock_cfg:
             mock_cfg.return_value.agent_tick_interval = 1
             mock_cfg.return_value.llm_configured = True

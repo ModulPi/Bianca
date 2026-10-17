@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from agent.config import Settings, get_settings
-from agent.graph.supervisor import run_agent_tick
+from agent.graph.goal_agent import run_goal_tick
+from agent.graph.supervisor import _force_close_if_needed
 from agent.portfolio.pnl import daily_pnl as compute_daily_pnl
+from agent.storage.repository import GoalRepository
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,13 @@ class RunnerSnapshot:
 
 
 class AgentRunner:
-    """Background asyncio loop that triggers LangGraph agent ticks."""
+    """后台循环：**只跑 active 目标**（§6.6 D-5）。
+
+    没有 active 目标时不再跑旧的 `run_agent_tick()` —— 那条路径没有冻结的
+    风控参数，后台自动交易会变成"没有边界地交易"（ADR-018 / ADR-021）。
+    但**账户级破线巡检不停**（ADR-027）：目标结束后留下的仓位仍然需要止损。
+    巡检不会开仓，只平已经破线的仓。
+    """
 
     def __init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
@@ -95,7 +103,14 @@ class AgentRunner:
 
     async def _run_one_tick(self, settings: Settings) -> None:
         try:
-            result = await run_agent_tick(settings=settings)
+            goal = await GoalRepository().active_goal()
+            if goal is None:
+                patrol = await _force_close_if_needed(settings)
+                result: dict = {"status": "no_active_goal"}
+                if patrol:
+                    result["force_close"] = patrol
+            else:
+                result = await run_goal_tick(goal_id=goal.id, settings=settings)
             self._snapshot.last_tick = datetime.now(UTC).isoformat()
             self._snapshot.last_status = result.get("status")
             self._snapshot.last_error = None

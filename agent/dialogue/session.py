@@ -93,6 +93,9 @@ def goal_brief(row: GoalLog) -> str:
     lines = ["已确认的目标："]
     if symbols:
         lines.append(f"- 标的：{'、'.join(symbols)}")
+    if row.target_equity is not None:
+        # 经理必须看到达成判据真正会用的那个数（ADR-040：绝对数优先）。
+        lines.append(f"- 目标权益（绝对）：{row.target_equity:g} USDT（达成判据优先用它）")
     if row.target_return_pct is not None:
         lines.append(f"- 收益目标：+{row.target_return_pct * 100:g}%")
     if "max_drawdown_pct" in frozen:

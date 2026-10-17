@@ -497,6 +497,29 @@ class OrderRepository:
         async with factory() as db:
             return list((await db.execute(stmt)).scalars().all())
 
+    async def count_maybe_reached_since(self, since_iso: str) -> int:
+        """当日预算计数（ADR-041）：**可能到了交易所**的订单有几笔。
+
+        计数口径按 ADR-041 写死：
+
+        · `submitted` / `filled` / `partial` / `unknown` 都算；
+        · `rejected` 不算 —— 交易所明确拒绝，那笔什么都没发生；
+        · `unknown` **必须算**：它可能已经成交，漏算等于把真实敞口藏起来；
+        · `pending` 不算：它只是"准备提交"的登记行，提交前失败的单没有到达交易所
+          （崩在提交中途的单会停在这里，但按 ADR-041 的口径不计 —— 这个保守性
+          的缺口写在文档里，不靠加状态悄悄改口径）。
+
+        `canceled` 不算：挂单被撤，当前没有敞口。
+        """
+        statuses = ("submitted", "filled", "partial", "unknown")
+        stmt = select(func.count()).select_from(OrderLog).where(
+            OrderLog.created_at >= since_iso,
+            OrderLog.status.in_(statuses),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
+
 
 class EquityRepository:
     """权益快照读写（见 `agent/storage/models.py::EquitySnapshotLog`）。"""
@@ -633,6 +656,23 @@ class GoalRepository:
         stmt = (
             select(GoalLog)
             .where(GoalLog.status.in_([GoalStatus.PROPOSED.value, GoalStatus.ACTIVE.value]))
+            .order_by(GoalLog.created_at.desc())
+            .limit(1)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            return (await db.execute(stmt)).scalar_one_or_none()
+
+    async def active_goal(self) -> GoalLog | None:
+        """当前正在执行的目标（后台循环只认这个）。
+
+        与 `open_goal()` 的区别：那个把 `proposed` 也算进来，用来回答"还有没有
+        没结束的对话"。拿它去跑 tick 会把一个**还没确认**的目标执行掉 ——
+        而它连 deadline 和冻结的风控快照都还没有。
+        """
+        stmt = (
+            select(GoalLog)
+            .where(GoalLog.status == GoalStatus.ACTIVE.value)
             .order_by(GoalLog.created_at.desc())
             .limit(1)
         )

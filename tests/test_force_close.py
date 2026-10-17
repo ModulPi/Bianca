@@ -344,6 +344,37 @@ async def test_the_trade_log_says_force_close_not_approved(db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_close_all_ignores_the_thresholds_and_keeps_its_own_origin(db, monkeypatch):
+    """达成清仓（ADR-038）：阈值完全不参与，来源也不能写成"强平"。"""
+    fake = FakeCCXT(_FILLED_SELL)
+    _install(monkeypatch, fake)
+    await _snapshot(positions=[_btc(price=50000.0)])
+
+    results = await close_module.force_close(
+        settings=_settings(),
+        # 两条线都远未触及 —— 普通巡检什么都不会做
+        params=_params(stop_loss_pct=0.99, max_drawdown_pct=0.99),
+        goal_id="g-1",
+        plan_id="p-1",
+        close_all=True,
+        origin=close_module.ORIGIN_GOAL_ACHIEVED,
+    )
+
+    assert len(results) == 1
+    assert results[0]["rule"] == "goal_achieved"
+    assert fake.created, "达成清仓也必须真的走到下单"
+
+    row = await TradeRepository().get_by_id(results[0]["trade_log_id"])
+    assert row.risk_decision == "goal_achieved"
+    assert "目标达成" in row.risk_reason
+    assert (row.goal_id, row.plan_id) == ("g-1", "p-1")
+
+    events = await RiskEventRepository().list_recent(limit=5)
+    detail = json.loads(events[0].detail)
+    assert detail["origin"] == "goal_achieved"
+
+
+@pytest.mark.asyncio
 async def test_the_order_lands_in_the_ledger_like_any_other(db, monkeypatch):
     """紧急不是跳过记账的理由 —— 恰恰相反，事后最需要查的就是这一笔。"""
     fake = FakeCCXT(_FILLED_SELL)

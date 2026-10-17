@@ -59,6 +59,40 @@ class MonitorResult:
         }
 
 
+def _closeable(pos: Position) -> bool:
+    """这个持仓能不能/该不该被平掉。"""
+    if pos.asset in CASH_ASSETS:
+        return False
+    if not pos.quantity:
+        return False
+    # 数量为负不是"持仓"，是我们还不上的东西；不在这里处置
+    return pos.quantity > 0
+
+
+def plan_close_all(positions: tuple[Position, ...], *, quote: str = "USDT") -> MonitorResult:
+    """目标达成后的清仓计划（ADR-038）。
+
+    **不看任何阈值。** 达成是一个已经发生的事实，"是否达成"由终止判据判过，
+    这里只负责把账户里的非现金持仓全列出来。留仓会让"已达成"在下一秒变成
+    假话，而状态不会自己改回去 —— 所以清仓与达成判定必须在同一轮里完成。
+    """
+    targets = [p for p in positions if _closeable(p)]
+    if not targets:
+        return MonitorResult(notes=("目标已达成，账户里没有需要平掉的持仓（已全是现金）",))
+    return MonitorResult(
+        instructions=tuple(
+            CloseInstruction(
+                symbol=f"{p.asset}{quote}",
+                asset=p.asset,
+                quantity=p.quantity,
+                rule="goal_achieved",
+                reason="目标已达成，按 ADR-038 清空全部持仓",
+            )
+            for p in targets
+        )
+    )
+
+
 def plan_closes(
     positions: tuple[Position, ...],
     highs: dict[str, float | None],
@@ -75,14 +109,6 @@ def plan_closes(
     两者同时成立时按回撤处理 —— 它的集合本来就更大，而且原因是账户级的。
     """
     notes: list[str] = []
-
-    def _closeable(pos: Position) -> bool:
-        if pos.asset in CASH_ASSETS:
-            return False
-        if not pos.quantity:
-            return False
-        # 数量为负不是"持仓"，是我们还不上的东西；不在这里处置
-        return pos.quantity > 0
 
     if drawdown_breached(drawdown_pct, params.max_drawdown_pct):
         targets = [p for p in positions if _closeable(p)]

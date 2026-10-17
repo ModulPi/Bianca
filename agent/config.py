@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # Agent
     agent_tick_interval: int = Field(default=300, ge=10)
     trade_symbol: str = "BTCUSDT"
+    # 预算硬上限（ADR-041）：每日「可能到了交易所」的订单数上限。
+    # 每 tick 至多 1 笔由 `run_goal_tick()` 的结构保证（一轮只问经理一次、
+    # 只执行一个信号），不另设配置。强制平仓不受这个上限约束 ——
+    # 保护动作被"今天额度用完了"挡住，是最糟的一种省钱。
+    max_orders_per_day: int = Field(default=20, ge=0)
 
     # Market data (行情数据模块，见 docs/outline-design/模块设计/行情数据模块设计-Bianca.md)
     # 行情一律取实盘（ADR-013），交易仍走上面的 Binance Demo

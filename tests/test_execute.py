@@ -304,6 +304,31 @@ async def test_exchange_rejection_is_rejected(db, monkeypatch):
     assert "insufficient" in row.error
 
 
+@pytest.mark.parametrize(
+    ("origin", "expected"),
+    [
+        # D-1 引入的新来源。旧实现只认 "force_close"，失败分支会把它记成 approved。
+        ("risk_force_close", "force_close"),
+        # 达成清仓既不是"风控通过"，也不是"强制平仓"。
+        ("goal_achieved", "goal_achieved"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_failed_protective_order_keeps_its_origin(db, monkeypatch, origin, expected):
+    """失败分支也必须说得出"这本来是什么单"，不能被记成一次普通交易。"""
+    fake = FakeCCXT(order_error=ccxt.InsufficientFunds("insufficient balance"))
+    _install(monkeypatch, fake)
+    await _seed_trade("t-1", side="SELL")
+
+    state = _state(action="SELL", amount=0.001)
+    state["order_origin"] = origin
+    result = await execute_agent.run_execute_agent(state)
+
+    assert result["status"] == "failed"
+    row = await TradeRepository().get_by_id("t-1")
+    assert row.risk_decision == expected
+
+
 @pytest.mark.asyncio
 async def test_network_error_is_unknown_not_rejected(db, monkeypatch):
     """**关键**：提交超时时交易所可能已经收单了。

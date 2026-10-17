@@ -12,21 +12,34 @@ from agent.api.schemas import (
     AnalysisResponse,
     BackfillResponse,
     BalanceResponse,
+    DecisionDetail,
     DecisionListResponse,
     DecisionLogItem,
     DialogueReply,
     DialogueTextRequest,
     DrawdownResetRequest,
     DrawdownResetResponse,
+    EquityHistoryResponse,
+    EquityPoint,
+    GoalItem,
+    GoalListResponse,
     HealthResponse,
+    KlineItem,
+    KlineListResponse,
     MarketStatusResponse,
+    MessageItem,
+    MessageListResponse,
     MessageResponse,
+    OrderDetail,
     OrderItem,
     OrderListResponse,
+    PlanItem,
+    PlanListResponse,
     PortfolioResponse,
     RiskEventItem,
     RiskEventListResponse,
     TickerResponse,
+    TradeDetail,
     TradeListResponse,
     TradeLogItem,
     TradeSignalResponse,
@@ -39,18 +52,34 @@ from agent.exchange._client import format_binance_error
 from agent.graph.supervisor import run_agent_tick
 from agent.llm.analyzer import check_llm
 from agent.market.collector import get_collector, market_health, market_status_detail
+from agent.market.repository import KlineRepository
 from agent.runner import get_runner
 from agent.storage.database import get_engine
 from agent.storage.repository import (
     DecisionRepository,
     EquityRepository,
     GoalRepository,
+    MessageRepository,
     OrderRepository,
+    PlanRepository,
     RiskEventRepository,
     TradeRepository,
 )
 
 router = APIRouter(prefix="/api/v1")
+
+
+def _check_page(limit: int, offset: int) -> None:
+    """分页参数只有一种校验 —— 每条列表都要过，不能各写各的。"""
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    if offset < 0:
+        raise HTTPException(status_code=422, detail="offset must be >= 0")
+
+
+def _json_or_none(text: str | None):
+    """库里存的是 JSON 文本。空就是空，不编一个 {}。"""
+    return json.loads(text) if text else None
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -213,99 +242,122 @@ async def agent_tick(body: AgentTickRequest | None = None) -> AgentTickResponse:
 @router.get("/trades", response_model=TradeListResponse)
 async def list_trades(
     limit: int = 50,
+    offset: int = 0,
     symbol: str | None = None,
     side: str | None = None,
     status: str | None = None,
+    goal_id: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
 ) -> TradeListResponse:
-    if limit < 1 or limit > 200:
-        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    _check_page(limit, offset)
     repo = TradeRepository()
-    rows = await repo.list_recent(
-        limit=limit,
-        symbol=symbol,
-        side=side,
-        status=status,
+    params = {
+        "symbol": symbol,
+        "side": side,
+        "status": status,
+        "goal_id": goal_id,
+        "since": since,
+        "until": until,
+    }
+    rows = await repo.list_recent(limit=limit, offset=offset, **params)
+    items = [_trade_item(r) for r in rows]
+    # total 必须与筛选条件同源：翻到第 2 页时它不能变成「本页条数」。
+    total = await repo.count(**params)
+    return TradeListResponse(items=items, total=total)
+
+
+def _trade_item(r) -> TradeLogItem:
+    return TradeLogItem(
+        id=r.id,
+        symbol=r.symbol,
+        side=r.side,
+        quantity=r.quantity,
+        price=r.price,
+        order_type=r.order_type,
+        status=r.status,
+        risk_decision=r.risk_decision,
+        risk_reason=r.risk_reason,
+        decision_reason=r.decision_reason,
+        llm_confidence=r.llm_confidence,
+        external_order_id=r.external_order_id,
+        decision_id=r.decision_id,
+        goal_id=r.goal_id,
+        plan_id=r.plan_id,
+        created_at=r.created_at,
     )
-    items = [
-        TradeLogItem(
-            id=r.id,
-            symbol=r.symbol,
-            side=r.side,
-            quantity=r.quantity,
-            price=r.price,
-            order_type=r.order_type,
-            status=r.status,
-            risk_decision=r.risk_decision,
-            risk_reason=r.risk_reason,
-            decision_reason=r.decision_reason,
-            llm_confidence=r.llm_confidence,
-            external_order_id=r.external_order_id,
-            decision_id=r.decision_id,
-            created_at=r.created_at,
-        )
-        for r in rows
-    ]
-    return TradeListResponse(items=items, total=len(items))
 
 
-@router.get("/trades/{trade_id}", response_model=TradeLogItem)
-async def get_trade(trade_id: str) -> TradeLogItem:
+@router.get("/trades/{trade_id}", response_model=TradeDetail)
+async def get_trade(trade_id: str) -> TradeDetail:
     repo = TradeRepository()
     row = await repo.get_by_id(trade_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Trade not found")
-    return TradeLogItem(
-        id=row.id,
-        symbol=row.symbol,
-        side=row.side,
-        quantity=row.quantity,
-        price=row.price,
-        order_type=row.order_type,
-        status=row.status,
-        risk_decision=row.risk_decision,
-        risk_reason=row.risk_reason,
-        decision_reason=row.decision_reason,
-        llm_confidence=row.llm_confidence,
-        external_order_id=row.external_order_id,
-        decision_id=row.decision_id,
-        created_at=row.created_at,
+    return TradeDetail(
+        **_trade_item(row).model_dump(),
+        context=_json_or_none(row.context),
+        equity=row.equity,
+        positions=_json_or_none(row.positions),
+    )
+
+
+def _order_item(r) -> OrderItem:
+    return OrderItem(
+        id=r.id,
+        client_order_id=r.client_order_id,
+        trade_id=r.trade_id,
+        decision_id=r.decision_id,
+        symbol=r.symbol,
+        side=r.side,
+        order_type=r.order_type,
+        amount_kind=r.amount_kind,
+        requested_amount=r.requested_amount,
+        status=r.status,
+        exchange_order_id=r.exchange_order_id,
+        filled_qty=r.filled_qty,
+        avg_price=r.avg_price,
+        cost_quote=r.cost_quote,
+        fee=r.fee,
+        error=r.error,
+        created_at=r.created_at,
+        updated_at=r.updated_at,
     )
 
 
 @router.get("/orders", response_model=OrderListResponse)
-async def list_orders(limit: int = 50) -> OrderListResponse:
+async def list_orders(
+    limit: int = 50,
+    offset: int = 0,
+    symbol: str | None = None,
+    side: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> OrderListResponse:
     """订单账本：交易所实际收到与回了什么。
 
     与 `/trades` 的分工：`/trades` 是**决策**流水（含 HOLD 与被风控拦下的），
     `/orders` 是**真实提交**过的订单回执。对账与归因看这里。
     """
-    if limit < 1 or limit > 200:
-        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    _check_page(limit, offset)
     repo = OrderRepository()
-    rows = await repo.list_recent(limit=limit)
-    items = [
-        OrderItem(
-            id=r.id,
-            client_order_id=r.client_order_id,
-            trade_id=r.trade_id,
-            decision_id=r.decision_id,
-            symbol=r.symbol,
-            side=r.side,
-            order_type=r.order_type,
-            amount_kind=r.amount_kind,
-            requested_amount=r.requested_amount,
-            status=r.status,
-            exchange_order_id=r.exchange_order_id,
-            filled_qty=r.filled_qty,
-            avg_price=r.avg_price,
-            cost_quote=r.cost_quote,
-            error=r.error,
-            created_at=r.created_at,
-            updated_at=r.updated_at,
-        )
-        for r in rows
-    ]
-    return OrderListResponse(items=items, total=len(items))
+    params = {"symbol": symbol, "side": side, "since": since, "until": until}
+    rows = await repo.list_recent(limit=limit, offset=offset, **params)
+    return OrderListResponse(
+        items=[_order_item(r) for r in rows],
+        total=await repo.count(**params),
+    )
+
+
+@router.get("/orders/{order_id}", response_model=OrderDetail)
+async def get_order(order_id: str) -> OrderDetail:
+    row = await OrderRepository().get_by_id(order_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return OrderDetail(
+        **_order_item(row).model_dump(),
+        raw_response=row.raw_response,
+    )
 
 
 @router.post("/portfolio/snapshot", response_model=PortfolioResponse)
@@ -348,11 +400,17 @@ async def get_portfolio() -> PortfolioResponse:
 
 
 @router.get("/risk/events", response_model=RiskEventListResponse)
-async def list_risk_events(limit: int = 50) -> RiskEventListResponse:
-    if limit < 1 or limit > 200:
-        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+async def list_risk_events(
+    limit: int = 50,
+    offset: int = 0,
+    event_type: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> RiskEventListResponse:
+    _check_page(limit, offset)
     repo = RiskEventRepository()
-    rows = await repo.list_recent(limit=limit)
+    params = {"event_type": event_type, "since": since, "until": until}
+    rows = await repo.list_recent(limit=limit, offset=offset, **params)
     items = [
         RiskEventItem(
             id=r.id,
@@ -363,7 +421,36 @@ async def list_risk_events(limit: int = 50) -> RiskEventListResponse:
         )
         for r in rows
     ]
-    return RiskEventListResponse(items=items, total=len(items))
+    return RiskEventListResponse(items=items, total=await repo.count(**params))
+
+
+@router.get("/equity/history", response_model=EquityHistoryResponse)
+async def equity_history(
+    limit: int = 500,
+    since: str | None = None,
+    until: str | None = None,
+) -> EquityHistoryResponse:
+    """权益快照序列（按时间正序），用于画曲线。
+
+    `total` 是同条件下的总快照数；`items` 是**最近** `limit` 条翻正。
+    """
+    if limit < 1 or limit > 5000:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 5000")
+    repo = EquityRepository()
+    rows = await repo.list_ascending(limit=limit, since=since, until=until)
+    return EquityHistoryResponse(
+        items=[
+            EquityPoint(
+                id=r.id,
+                captured_at=r.captured_at,
+                equity=r.equity,
+                cash_quote=r.cash_quote,
+                holdings_value=r.holdings_value,
+            )
+            for r in rows
+        ],
+        total=await repo.count(since=since, until=until),
+    )
 
 
 @router.post("/risk/reset-drawdown", response_model=DrawdownResetResponse)
@@ -407,26 +494,57 @@ async def run_analysis(body: AnalysisRequest | None = None) -> AnalysisResponse:
     )
 
 
+def _decision_item(row) -> DecisionLogItem:
+    return DecisionLogItem(
+        id=row.id,
+        model_used=row.model_used,
+        prompt_summary=row.prompt_summary,
+        parsed_signal=json.loads(row.parsed_signal),
+        prompt_tokens=row.prompt_tokens,
+        completion_tokens=row.completion_tokens,
+        total_tokens=row.total_tokens,
+        goal_id=row.goal_id,
+        plan_id=row.plan_id,
+        plan_step=row.plan_step,
+        created_at=row.created_at,
+    )
+
+
 @router.get("/decisions", response_model=DecisionListResponse)
-async def list_decisions(limit: int = 50) -> DecisionListResponse:
-    if limit < 1 or limit > 200:
-        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+async def list_decisions(
+    limit: int = 50,
+    offset: int = 0,
+    goal_id: str | None = None,
+    plan_id: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> DecisionListResponse:
+    _check_page(limit, offset)
     repo = DecisionRepository()
-    rows = await repo.list_recent(limit=limit)
-    items = [
-        DecisionLogItem(
-            id=row.id,
-            model_used=row.model_used,
-            prompt_summary=row.prompt_summary,
-            parsed_signal=json.loads(row.parsed_signal),
-            prompt_tokens=row.prompt_tokens,
-            completion_tokens=row.completion_tokens,
-            total_tokens=row.total_tokens,
-            created_at=row.created_at,
-        )
-        for row in rows
-    ]
-    return DecisionListResponse(items=items, total=len(items))
+    params = {"goal_id": goal_id, "plan_id": plan_id, "since": since, "until": until}
+    rows = await repo.list_recent(limit=limit, offset=offset, **params)
+    return DecisionListResponse(
+        items=[_decision_item(row) for row in rows],
+        total=await repo.count(**params),
+    )
+
+
+@router.get("/decisions/{decision_id}", response_model=DecisionDetail)
+async def get_decision(decision_id: str) -> DecisionDetail:
+    """单条决策的完整依据 —— 包括实际发出去的 prompt 与原始回答。
+
+    只存一行摘要时，「模型当时看着什么说的」就永远查不到；这条路径是那个答案。
+    """
+    row = await DecisionRepository().get_by_id(decision_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Decision not found")
+    return DecisionDetail(
+        **_decision_item(row).model_dump(),
+        raw_output=row.raw_output,
+        prompt=_json_or_none(row.prompt),
+        prompt_variant=row.prompt_variant,
+        market_data=_json_or_none(row.market_data),
+    )
 
 
 @router.get("/usage", response_model=UsageSummaryResponse)
@@ -481,6 +599,45 @@ async def market_status() -> MarketStatusResponse:
     """行情采集状态：lag_seconds 是最该盯的指标（> 数个周期即为异常）。"""
     detail = await market_status_detail(get_collector())
     return MarketStatusResponse(**detail)
+
+
+@router.get("/market/klines", response_model=KlineListResponse)
+async def market_klines(
+    symbol: str,
+    interval: str = "1m",
+    limit: int = 120,
+    end: int | None = None,
+) -> KlineListResponse:
+    """从行情库读最近 `limit` 根 K 线（按时间正序）。
+
+    `end` 是 epoch ms：只看某时刻（含）之前的 bar。没有它就看最新的。
+    `total` 是该 symbol+interval 在库里的总行数，不是本页条数。
+    """
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 1000")
+    repo = KlineRepository()
+    rows = await repo.list_bars(symbol, interval, limit=limit, end_ms=end)
+    return KlineListResponse(
+        symbol=symbol.upper(),
+        interval=interval,
+        items=[
+            KlineItem(
+                time=int(r.time),
+                open=r.open,
+                high=r.high,
+                low=r.low,
+                close=r.close,
+                volume=r.volume,
+                quote_volume=r.quote_volume,
+                trades=r.trades,
+                taker_buy_base=r.taker_buy_base,
+                taker_buy_quote=r.taker_buy_quote,
+            )
+            for r in rows
+        ],
+        total=await repo.count_bars(symbol, interval),
+        source="market.db",
+    )
 
 
 @router.post("/market/backfill", response_model=BackfillResponse)
@@ -606,3 +763,124 @@ async def dialogue_plan(goal_id: str) -> DialogueReply:
     except ValueError as exc:
         raise _dialogue_error(exc) from exc
     return _dialogue_reply(reply)
+
+
+# ---- 目标 / 消息 / 计划（阶段 F-1）--------------------------------------------
+#
+# 这是**只读面**：目标由对话层写，这里只把库里的事实读出来。
+# 「空 = 用户没说」在这几层必须一路保持：JSON 空列返回 null，不返回 {}。
+
+
+def _goal_item(row) -> GoalItem:
+    return GoalItem(
+        id=row.id,
+        status=row.status,
+        raw_text=row.raw_text,
+        parsed=_json_or_none(row.parsed),
+        objective=row.objective,
+        symbols=_json_or_none(row.symbols),
+        target_return_pct=row.target_return_pct,
+        target_equity=row.target_equity,
+        max_drawdown_pct=row.max_drawdown_pct,
+        horizon_hours=row.horizon_hours,
+        autonomy=row.autonomy,
+        stated_capital=row.stated_capital,
+        baseline_equity=row.baseline_equity,
+        risk_snapshot=_json_or_none(row.risk_snapshot),
+        plan_id=row.plan_id,
+        created_at=row.created_at,
+        confirmed_at=row.confirmed_at,
+        deadline_at=row.deadline_at,
+        ended_at=row.ended_at,
+        end_reason=row.end_reason,
+    )
+
+
+def _plan_item(row, *, transcript: list | None = None) -> PlanItem:
+    return PlanItem(
+        id=row.id,
+        goal_id=row.goal_id,
+        plan=_json_or_none(row.plan),
+        plan_shape=row.plan_shape,
+        final_text=row.final_text,
+        invocations=json.loads(row.invocations),
+        shapes=json.loads(row.shapes),
+        usage=_json_or_none(row.usage),
+        errors=json.loads(row.errors),
+        rounds=row.rounds,
+        created_at=row.created_at,
+        transcript=transcript,
+    )
+
+
+@router.get("/goals", response_model=GoalListResponse)
+async def list_goals(
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+) -> GoalListResponse:
+    _check_page(limit, offset)
+    repo = GoalRepository()
+    rows = await repo.list_recent(limit=limit, offset=offset, status=status)
+    return GoalListResponse(
+        items=[_goal_item(r) for r in rows],
+        total=await repo.count(status=status),
+    )
+
+
+@router.get("/goals/{goal_id}", response_model=GoalItem)
+async def get_goal(goal_id: str) -> GoalItem:
+    row = await GoalRepository().get(goal_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"没有这个目标：{goal_id}")
+    return _goal_item(row)
+
+
+@router.get("/goals/{goal_id}/messages", response_model=MessageListResponse)
+async def list_goal_messages(
+    goal_id: str,
+    limit: int = 200,
+    offset: int = 0,
+) -> MessageListResponse:
+    """该目标的全部消息，按时间正序。这是「会话重启后上下文不丢」的那份记录。"""
+    _check_page(limit, offset)
+    if await GoalRepository().get(goal_id) is None:
+        raise HTTPException(status_code=404, detail=f"没有这个目标：{goal_id}")
+    repo = MessageRepository()
+    rows = await repo.list_for_goal(goal_id, limit=limit, offset=offset)
+    return MessageListResponse(
+        items=[
+            MessageItem(
+                id=r.id,
+                goal_id=r.goal_id,
+                role=r.role,
+                content=r.content,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ],
+        total=await repo.count_for_goal(goal_id),
+    )
+
+
+@router.get("/goals/{goal_id}/plans", response_model=PlanListResponse)
+async def list_goal_plans(goal_id: str) -> PlanListResponse:
+    """该目标的所有规划尝试（成功失败都返回），按时间倒序。"""
+    if await GoalRepository().get(goal_id) is None:
+        raise HTTPException(status_code=404, detail=f"没有这个目标：{goal_id}")
+    rows = await PlanRepository().for_goal(goal_id)
+    return PlanListResponse(items=[_plan_item(r) for r in rows], total=len(rows))
+
+
+@router.get("/plans/{plan_id}", response_model=PlanItem)
+async def get_plan(plan_id: str, include_transcript: bool = False) -> PlanItem:
+    """单次规划的详情。
+
+    transcript 是实际发出去的全部 messages，可能很大 —— 默认不返回，
+    要的人显式带上 `include_transcript=1`。
+    """
+    row = await PlanRepository().get(plan_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"没有这次规划：{plan_id}")
+    transcript = json.loads(row.transcript) if include_transcript else None
+    return _plan_item(row, transcript=transcript)

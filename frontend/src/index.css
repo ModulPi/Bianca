@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+body {
+  @apply bg-zinc-950 text-zinc-100 antialiased;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.mono {
+  font-family: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+}

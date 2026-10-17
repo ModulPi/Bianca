@@ -97,12 +97,26 @@ class DecisionLogItem(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    goal_id: str | None = None
+    plan_id: str | None = None
+    # 经理自报对应计划的第几步。空本身是信息（HOLD / 偏离计划）。
+    plan_step: int | None = None
     created_at: str
 
 
 class DecisionListResponse(BaseModel):
     items: list[DecisionLogItem]
     total: int
+
+
+class DecisionDetail(DecisionLogItem):
+    """单条决策的完整依据。列表不返回这些大字段（prompt 可能有几千 token）。"""
+
+    raw_output: str
+    # 实际发出去的 messages（list）或旧数据里的整段字符串。两种形状都如实返回。
+    prompt: list[dict] | dict | str | None = None
+    prompt_variant: str | None = None
+    market_data: dict | str | None = None
 
 
 class AgentTickRequest(BaseModel):
@@ -134,6 +148,9 @@ class TradeLogItem(BaseModel):
     llm_confidence: float | None = None
     external_order_id: str | None = None
     decision_id: str | None = None
+    # 归因链：这笔交易属于哪个目标 / 哪份计划。可以是空（旧数据、人工全平）。
+    goal_id: str | None = None
+    plan_id: str | None = None
     created_at: str
 
 
@@ -161,6 +178,8 @@ class OrderItem(BaseModel):
     filled_qty: float | None = None
     avg_price: float | None = None
     cost_quote: float | None = None
+    # 交易所回执里的手续费原文。BUY 收基础币、SELL 收计价币，口径由交易所定。
+    fee: str | None = None
     error: str | None = None
     created_at: str
     updated_at: str
@@ -169,6 +188,12 @@ class OrderItem(BaseModel):
 class OrderListResponse(BaseModel):
     items: list[OrderItem]
     total: int
+
+
+class OrderDetail(OrderItem):
+    """订单详情：多出交易所原始回执。列表不返回（可能很大）。"""
+
+    raw_response: str | None = None
 
 
 class RiskEventItem(BaseModel):
@@ -299,6 +324,18 @@ class PositionItem(BaseModel):
     value_quote: float | None = None
 
 
+class TradeDetail(TradeLogItem):
+    """单笔交易的完整依据（ADR-019 R1/R2/R3）。
+
+    `context` 是决策时刻的输入：LLM 路径是行情上下文，强制平仓路径是
+    持仓 + 高点 + 回撤。它可能很大，所以只在详情返回。
+    """
+
+    context: dict | str | None = None
+    equity: float | None = None
+    positions: list[PositionItem] | None = None
+
+
 class HoldingGapItem(BaseModel):
     """交易所持仓与本地账本归因之间的差。差分不为零**不代表出错**：
     账户在 agent 上线前就有余额，那部分本来就解释不了。"""
@@ -350,3 +387,112 @@ class DialogueReply(BaseModel):
     unclear: list[str] = []
     activated: bool = False
     plan_id: str | None = None
+
+
+# ---------------------------------------------------------------- 目标 / 消息 / 计划（阶段 F-1）
+
+
+class GoalItem(BaseModel):
+    """一个目标的完整生命周期。**空 = 用户没说，不是默认值。**"""
+
+    id: str
+    status: str
+    raw_text: str
+    parsed: dict | None = None
+    objective: str | None = None
+    symbols: list[str] | None = None
+    target_return_pct: float | None = None
+    target_equity: float | None = None
+    max_drawdown_pct: float | None = None
+    horizon_hours: float | None = None
+    autonomy: str | None = None
+    stated_capital: float | None = None
+    baseline_equity: float | None = None
+    risk_snapshot: dict | None = None
+    plan_id: str | None = None
+    created_at: str
+    confirmed_at: str | None = None
+    deadline_at: str | None = None
+    ended_at: str | None = None
+    end_reason: str | None = None
+
+
+class GoalListResponse(BaseModel):
+    items: list[GoalItem]
+    total: int
+
+
+class MessageItem(BaseModel):
+    id: str
+    goal_id: str
+    role: str
+    content: str
+    created_at: str
+
+
+class MessageListResponse(BaseModel):
+    items: list[MessageItem]
+    total: int
+
+
+class PlanItem(BaseModel):
+    """一次规划尝试。**失败也返回** —— `plan = null` 就是没解出来。"""
+
+    id: str
+    goal_id: str
+    plan: dict | None = None
+    plan_shape: str
+    final_text: str
+    invocations: list = []
+    shapes: list[str] = []
+    usage: dict | None = None
+    errors: list[str] = []
+    rounds: int = 0
+    created_at: str
+    # 只有详情且显式 include_transcript 才返回。
+    transcript: list | None = None
+
+
+class PlanListResponse(BaseModel):
+    items: list[PlanItem]
+    total: int
+
+
+# ---------------------------------------------------------------- 权益历史 / K 线（阶段 F-1）
+
+
+class EquityPoint(BaseModel):
+    id: str
+    captured_at: str
+    equity: float
+    cash_quote: float
+    holdings_value: float
+
+
+class EquityHistoryResponse(BaseModel):
+    items: list[EquityPoint]
+    total: int
+
+
+class KlineItem(BaseModel):
+    """`klines` 的一行。`time` 是 bar 开始时间（epoch ms），不是 ISO 字符串。"""
+
+    time: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    quote_volume: float | None = None
+    trades: int | None = None
+    taker_buy_base: float | None = None
+    taker_buy_quote: float | None = None
+
+
+class KlineListResponse(BaseModel):
+    symbol: str
+    interval: str
+    items: list[KlineItem]
+    # 该 symbol+interval 在库里的总行数（不是本页条数）。
+    total: int
+    source: str

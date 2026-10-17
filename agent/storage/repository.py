@@ -139,8 +139,41 @@ class DecisionRepository:
             await db.refresh(row)
             return row
 
-    async def list_recent(self, limit: int = 50, session: AsyncSession | None = None) -> list[DecisionLog]:
-        stmt = select(DecisionLog).order_by(DecisionLog.created_at.desc()).limit(limit)
+    @staticmethod
+    def _where(
+        *,
+        goal_id: str | None = None,
+        plan_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list:
+        conds = []
+        if goal_id:
+            conds.append(DecisionLog.goal_id == goal_id)
+        if plan_id:
+            conds.append(DecisionLog.plan_id == plan_id)
+        if since:
+            conds.append(DecisionLog.created_at >= since)
+        if until:
+            conds.append(DecisionLog.created_at <= until)
+        return conds
+
+    async def list_recent(
+        self,
+        limit: int = 50,
+        *,
+        offset: int = 0,
+        goal_id: str | None = None,
+        plan_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> list[DecisionLog]:
+        conds = self._where(goal_id=goal_id, plan_id=plan_id, since=since, until=until)
+        stmt = select(DecisionLog)
+        if conds:
+            stmt = stmt.where(*conds)
+        stmt = stmt.order_by(DecisionLog.created_at.desc()).offset(offset).limit(limit)
 
         if session is not None:
             result = await session.execute(stmt)
@@ -150,6 +183,22 @@ class DecisionRepository:
         async with factory() as db:
             result = await db.execute(stmt)
             return list(result.scalars().all())
+
+    async def count(
+        self,
+        *,
+        goal_id: str | None = None,
+        plan_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> int:
+        conds = self._where(goal_id=goal_id, plan_id=plan_id, since=since, until=until)
+        stmt = select(func.count()).select_from(DecisionLog)
+        if conds:
+            stmt = stmt.where(*conds)
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id(
         self, decision_id: str, session: AsyncSession | None = None
@@ -302,26 +351,75 @@ class TradeRepository:
                 row.order_type = order_type
             await db.commit()
 
-    async def list_recent(
-        self,
-        limit: int = 50,
+    @staticmethod
+    def _where(
         *,
         symbol: str | None = None,
         side: str | None = None,
         status: str | None = None,
-    ) -> list[TradeLog]:
-        stmt = select(TradeLog)
+        goal_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list:
+        """筛选条件只写一份 —— 列表与计数必须同源，否则翻页时 total 会漂。"""
+        conds = []
         if symbol:
-            stmt = stmt.where(TradeLog.symbol == symbol)
+            conds.append(TradeLog.symbol == symbol)
         if side:
-            stmt = stmt.where(TradeLog.side == side.upper())
+            conds.append(TradeLog.side == side.upper())
         if status:
-            stmt = stmt.where(TradeLog.status == status)
-        stmt = stmt.order_by(TradeLog.created_at.desc()).limit(limit)
+            conds.append(TradeLog.status == status)
+        if goal_id:
+            conds.append(TradeLog.goal_id == goal_id)
+        if since:
+            conds.append(TradeLog.created_at >= since)
+        if until:
+            conds.append(TradeLog.created_at <= until)
+        return conds
+
+    async def list_recent(
+        self,
+        limit: int = 50,
+        *,
+        offset: int = 0,
+        symbol: str | None = None,
+        side: str | None = None,
+        status: str | None = None,
+        goal_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[TradeLog]:
+        conds = self._where(
+            symbol=symbol, side=side, status=status, goal_id=goal_id, since=since, until=until
+        )
+        stmt = select(TradeLog)
+        if conds:
+            stmt = stmt.where(*conds)
+        stmt = stmt.order_by(TradeLog.created_at.desc()).offset(offset).limit(limit)
         factory = get_session_factory()
         async with factory() as db:
             result = await db.execute(stmt)
             return list(result.scalars().all())
+
+    async def count(
+        self,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+        status: str | None = None,
+        goal_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> int:
+        conds = self._where(
+            symbol=symbol, side=side, status=status, goal_id=goal_id, since=since, until=until
+        )
+        stmt = select(func.count()).select_from(TradeLog)
+        if conds:
+            stmt = stmt.where(*conds)
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
 
     async def get_by_id(self, trade_id: str) -> TradeLog | None:
         factory = get_session_factory()
@@ -351,12 +449,55 @@ class RiskEventRepository:
             await db.refresh(row)
             return row
 
-    async def list_recent(self, limit: int = 50) -> list[RiskEvent]:
-        stmt = select(RiskEvent).order_by(RiskEvent.created_at.desc()).limit(limit)
+    @staticmethod
+    def _where(
+        *,
+        event_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list:
+        conds = []
+        if event_type:
+            conds.append(RiskEvent.event_type == event_type)
+        if since:
+            conds.append(RiskEvent.created_at >= since)
+        if until:
+            conds.append(RiskEvent.created_at <= until)
+        return conds
+
+    async def list_recent(
+        self,
+        limit: int = 50,
+        *,
+        offset: int = 0,
+        event_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[RiskEvent]:
+        conds = self._where(event_type=event_type, since=since, until=until)
+        stmt = select(RiskEvent)
+        if conds:
+            stmt = stmt.where(*conds)
+        stmt = stmt.order_by(RiskEvent.created_at.desc()).offset(offset).limit(limit)
         factory = get_session_factory()
         async with factory() as db:
             result = await db.execute(stmt)
             return list(result.scalars().all())
+
+    async def count(
+        self,
+        *,
+        event_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> int:
+        conds = self._where(event_type=event_type, since=since, until=until)
+        stmt = select(func.count()).select_from(RiskEvent)
+        if conds:
+            stmt = stmt.where(*conds)
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
 
 
 class AgentConfigRepository:
@@ -492,11 +633,59 @@ class OrderRepository:
         """
         return await self._apply(order_id, error=error)
 
-    async def list_recent(self, limit: int = 50) -> list[OrderLog]:
-        stmt = select(OrderLog).order_by(OrderLog.created_at.desc()).limit(limit)
+    @staticmethod
+    def _where(
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list:
+        conds = []
+        if symbol:
+            conds.append(OrderLog.symbol == symbol)
+        if side:
+            conds.append(OrderLog.side == side.upper())
+        if since:
+            conds.append(OrderLog.created_at >= since)
+        if until:
+            conds.append(OrderLog.created_at <= until)
+        return conds
+
+    async def list_recent(
+        self,
+        limit: int = 50,
+        *,
+        offset: int = 0,
+        symbol: str | None = None,
+        side: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[OrderLog]:
+        conds = self._where(symbol=symbol, side=side, since=since, until=until)
+        stmt = select(OrderLog)
+        if conds:
+            stmt = stmt.where(*conds)
+        stmt = stmt.order_by(OrderLog.created_at.desc()).offset(offset).limit(limit)
         factory = get_session_factory()
         async with factory() as db:
             return list((await db.execute(stmt)).scalars().all())
+
+    async def count(
+        self,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> int:
+        conds = self._where(symbol=symbol, side=side, since=since, until=until)
+        stmt = select(func.count()).select_from(OrderLog)
+        if conds:
+            stmt = stmt.where(*conds)
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
 
     async def count_maybe_reached_since(self, since_iso: str) -> int:
         """当日预算计数（ADR-041）：**可能到了交易所**的订单有几笔。
@@ -601,6 +790,39 @@ class EquityRepository:
         factory = get_session_factory()
         async with factory() as db:
             return list((await db.execute(stmt)).scalars().all())
+
+    async def list_ascending(
+        self,
+        limit: int = 500,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[EquitySnapshotLog]:
+        """按时间**正序**取，最多 `limit` 条 —— 曲线要从左到右画。
+
+        取的是**最近** limit 条再翻正：先 `desc` 截断、再在内存里反序，
+        否则"最早的 500 条"会随着历史增长永远停在开头。
+        """
+        stmt = select(EquitySnapshotLog)
+        if since:
+            stmt = stmt.where(EquitySnapshotLog.captured_at >= since)
+        if until:
+            stmt = stmt.where(EquitySnapshotLog.captured_at <= until)
+        stmt = stmt.order_by(EquitySnapshotLog.captured_at.desc()).limit(limit)
+        factory = get_session_factory()
+        async with factory() as db:
+            rows = list((await db.execute(stmt)).scalars().all())
+        return list(reversed(rows))
+
+    async def count(self, *, since: str | None = None, until: str | None = None) -> int:
+        stmt = select(func.count()).select_from(EquitySnapshotLog)
+        if since:
+            stmt = stmt.where(EquitySnapshotLog.captured_at >= since)
+        if until:
+            stmt = stmt.where(EquitySnapshotLog.captured_at <= until)
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
 
 
 class AttributionBaselineRepository:
@@ -737,11 +959,24 @@ class GoalRepository:
         async with factory() as db:
             return (await db.execute(stmt)).scalar_one_or_none()
 
-    async def list_recent(self, limit: int = 50) -> list[GoalLog]:
-        stmt = select(GoalLog).order_by(GoalLog.created_at.desc()).limit(limit)
+    async def list_recent(
+        self, limit: int = 50, *, offset: int = 0, status: str | None = None
+    ) -> list[GoalLog]:
+        stmt = select(GoalLog)
+        if status:
+            stmt = stmt.where(GoalLog.status == status)
+        stmt = stmt.order_by(GoalLog.created_at.desc()).offset(offset).limit(limit)
         factory = get_session_factory()
         async with factory() as db:
             return list((await db.execute(stmt)).scalars().all())
+
+    async def count(self, *, status: str | None = None) -> int:
+        stmt = select(func.count()).select_from(GoalLog)
+        if status:
+            stmt = stmt.where(GoalLog.status == status)
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
 
     async def save_draft(self, goal_id: str, draft: GoalDraft) -> GoalLog:
         """把这一轮的草稿写上去。**只有 `proposed` 能写。**
@@ -865,17 +1100,30 @@ class MessageRepository:
             await db.refresh(row)
             return row
 
-    async def list_for_goal(self, goal_id: str, limit: int = 200) -> list[MessageLog]:
+    async def list_for_goal(
+        self, goal_id: str, limit: int = 200, *, offset: int = 0
+    ) -> list[MessageLog]:
         """按时间**正序**取 —— 这是要按顺序拼回对话上下文的，倒序还得再翻一次。"""
         stmt = (
             select(MessageLog)
             .where(MessageLog.goal_id == goal_id)
             .order_by(MessageLog.created_at.asc())
+            .offset(offset)
             .limit(limit)
         )
         factory = get_session_factory()
         async with factory() as db:
             return list((await db.execute(stmt)).scalars().all())
+
+    async def count_for_goal(self, goal_id: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(MessageLog)
+            .where(MessageLog.goal_id == goal_id)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
 
 
 class PlanRepository:

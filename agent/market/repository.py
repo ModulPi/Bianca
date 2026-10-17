@@ -102,6 +102,38 @@ class KlineRepository:
             )
             return result.scalar_one_or_none()
 
+    async def list_bars(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int = 120,
+        end_ms: int | None = None,
+    ) -> list[Kline]:
+        """最近 `limit` 根，按时间**正序**返回（图表从左到右）。
+
+        取最近 N 根再翻正 —— 与权益曲线同一个理由：先截最新的一段。
+        """
+        stmt = select(Kline).where(
+            Kline.symbol == symbol.upper(), Kline.interval == interval
+        )
+        if end_ms is not None:
+            stmt = stmt.where(Kline.time <= end_ms)
+        stmt = stmt.order_by(Kline.time.desc()).limit(limit)
+        factory = get_market_session_factory()
+        async with factory() as db:
+            rows = list((await db.execute(stmt)).scalars().all())
+        return list(reversed(rows))
+
+    async def count_bars(self, symbol: str, interval: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Kline)
+            .where(Kline.symbol == symbol.upper(), Kline.interval == interval)
+        )
+        factory = get_market_session_factory()
+        async with factory() as db:
+            return int((await db.execute(stmt)).scalar_one())
+
     async def first_bar_time(self, symbol: str, interval: str) -> int | None:
         factory = get_market_session_factory()
         async with factory() as db:

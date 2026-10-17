@@ -18,6 +18,14 @@ from agent.dialogue.goal import (
     risk_snapshot,
 )
 from agent.dialogue.retell import retell
+from agent.dialogue.termination import (
+    GoalTerms,
+    TerminationKind,
+    TerminationVerdict,
+    apply_termination,
+    evaluate_termination,
+    target_equity_of,
+)
 from agent.dialogue.session import (
     ROLE_ASSISTANT,
     ROLE_USER,
@@ -40,13 +48,19 @@ __all__ = [
     "GoalDraft",
     "GoalNotFound",
     "GoalStatus",
+    "GoalTerms",
     "OpenGoalExists",
     "Reply",
+    "TerminationKind",
+    "TerminationVerdict",
     "activation_times",
+    "apply_termination",
     "check_transition",
     "effective_drawdown_limit",
+    "evaluate_termination",
     "extract",
     "goal_brief",
     "retell",
     "risk_snapshot",
+    "target_equity_of",
 ]

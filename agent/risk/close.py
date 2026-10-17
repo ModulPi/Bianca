@@ -19,6 +19,12 @@ from agent.config import Settings, get_settings
 from agent.portfolio.valuation import positions_to_rows
 from agent.risk.engine import load_portfolio_inputs
 from agent.risk.monitor import CloseInstruction, plan_close_all, plan_closes
+from agent.risk.origins import (
+    ORIGIN_GOAL_ACHIEVED,
+    ORIGIN_MANUAL_CLOSE,
+    ORIGIN_RISK_FORCE_CLOSE,
+    risk_decision_for,
+)
 from agent.risk.params import RiskParams
 from agent.storage.repository import (
     RiskEventRepository,
@@ -30,14 +36,6 @@ logger = logging.getLogger(__name__)
 
 # 豁免掉的规则名。写进事件里，好让事后一眼看出这笔单没走常规闸门。
 EXEMPT_RULES = ("max_trade_amount", "daily_loss", "position_limit", "stop_loss", "drawdown")
-
-#: 强平在归因里的来源（ADR-035）。**不能省成 `force_close`** —— 那和
-#: `trade_logs.risk_decision` 的取值同名，事后分不清"这是来源"还是"这是裁决"。
-ORIGIN_RISK_FORCE_CLOSE = "risk_force_close"
-
-#: 目标达成后的清仓（ADR-038）。走同一条确定性管线，但来源不同 ——
-#: 它压根不是风控动作，事后不能混进"破线强平"里。
-ORIGIN_GOAL_ACHIEVED = "goal_achieved"
 
 
 async def force_close(
@@ -54,9 +52,9 @@ async def force_close(
     有 active 目标时，`params` 必须是目标确认时那份快照（ADR-021）——
     阈值来自目标，不来自当前 `.env`。目标 id 一并带下去认领（ADR-035）。
 
-    `close_all=True` 是达成后的清仓（ADR-038）：不看阈值，平掉全部非现金持仓。
-    `origin` 必须由调用方显式指定（清仓是 `goal_achieved`），默认才是破线强平 ——
-    这两件事在事后归因里不能混成一句"强平"。
+    `close_all=True` 是不看阈值的清仓：达成后用 `goal_achieved`（ADR-038），
+    用户指令下的手工全平用 `manual_close`。`origin` **必须由调用方显式指定**，
+    默认才是破线强平 —— 这三件事在事后归因里不能混成一句"强平"。
 
     返回本轮实际尝试的平仓摘要（每个元素形如
     `{"asset":..., "symbol":..., "quantity":..., "rule":..., "status":...}`）。
@@ -67,16 +65,26 @@ async def force_close(
     source = origin or ORIGIN_RISK_FORCE_CLOSE
     inputs = await load_portfolio_inputs(cfg)
 
-    plan = (
-        plan_close_all(inputs.positions)
-        if close_all
-        else plan_closes(
+    if close_all:
+        # 人工全平与达成清仓走同一条"不看阈值"的管线，但**来源必须说清楚** ——
+        # 记成 `goal_achieved` 会让"这个目标达成过"凭空多出一次。
+        manual = source == ORIGIN_MANUAL_CLOSE
+        plan = plan_close_all(
+            inputs.positions,
+            rule=ORIGIN_MANUAL_CLOSE if manual else "goal_achieved",
+            reason=(
+                "按用户指令清空全部持仓"
+                if manual
+                else "目标已达成，按 ADR-038 清空全部持仓"
+            ),
+        )
+    else:
+        plan = plan_closes(
             inputs.positions,
             inputs.highs,
             inputs.drawdown_pct,
             params=effective,
         )
-    )
     for note in plan.notes:
         logger.info("平仓巡检：%s", note)
     if not plan.should_close:
@@ -138,10 +146,9 @@ async def _close_one(
         signal=signal,
         market_data={"symbol": instruction.symbol},
         status="force_close",
-        # 达成清仓不是"风控裁决"，不能记成 force_close（ADR-038）。
-        risk_decision=(
-            "goal_achieved" if origin == ORIGIN_GOAL_ACHIEVED else "force_close"
-        ),
+        # 来源 → 裁决的口径只有一份（`agent/risk/origins.py`）。达成 / 人工全平
+        # 都不是"风控裁决"，不能记成 force_close（ADR-038）。
+        risk_decision=risk_decision_for(origin),
         risk_reason=instruction.reason,
         # 强制平仓没有行情上下文（它不看 K 线），它的"当时依据"就是**风控输入**：
         # 持仓、观测高点、回撤。这同样要能回答 R2/R3，只是答案的形状不同。

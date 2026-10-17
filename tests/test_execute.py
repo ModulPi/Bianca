@@ -311,6 +311,8 @@ async def test_exchange_rejection_is_rejected(db, monkeypatch):
         ("risk_force_close", "force_close"),
         # 达成清仓既不是"风控通过"，也不是"强制平仓"。
         ("goal_achieved", "goal_achieved"),
+        # 人工全平同样不是风控裁决，也不能混进"强制平仓"的统计。
+        ("manual_close", "manual_close"),
     ],
 )
 @pytest.mark.asyncio

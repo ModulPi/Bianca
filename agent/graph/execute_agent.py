@@ -12,6 +12,12 @@ from agent.config import Settings, get_settings
 from agent.exchange._client import format_binance_error
 from agent.exchange.spot_demo import SpotDemoExchange
 from agent.graph.state import TradeState
+from agent.risk.origins import (
+    FORCED_ORIGINS,
+    ORIGIN_GOAL_ACHIEVED,
+    ORIGIN_MANUAL_CLOSE,
+    risk_decision_for,
+)
 from agent.storage.models import OrderLog
 from agent.storage.repository import OrderRepository, TradeRepository
 from agent.trading.orders import (
@@ -322,24 +328,9 @@ async def _record_failure(
     )
 
 
-#: 由代码发起、绕过常规闸门的订单来源。`force_close` 是旧值（ADR-035 之前），
-#: 库里已经有按它写下的行，所以要一直认。
-_FORCED_ORIGINS = frozenset({"force_close", "risk_force_close"})
-ORIGIN_GOAL_ACHIEVED = "goal_achieved"
-
-
-def _risk_decision_for(origin: str) -> str:
-    """来源 → `trade_logs.risk_decision`。**三件事不能压成一个词。**
-
-    破线强平、达成清仓、常规风控放行，在"这笔单为什么会存在"上是三个答案。
-    尤其达成清仓：它不是风控动作，记成 `force_close` 会让事后统计"多少次
-    强制平仓"时把它算进去。
-    """
-    if origin == ORIGIN_GOAL_ACHIEVED:
-        return ORIGIN_GOAL_ACHIEVED
-    if origin in _FORCED_ORIGINS:
-        return "force_close"
-    return "approved"
+#: 由代码发起、绕过常规闸门的订单来源。词表在 `agent/risk/origins.py` ——
+#: 与 `close.py` 共用一份，两处各写一份的话，新来源只会在其中一侧被漏掉。
+_FORCED_ORIGINS = FORCED_ORIGINS
 
 
 def _is_forced(origin: str) -> bool:
@@ -357,7 +348,7 @@ async def _mark_trade(
         # 失败也一样：强制平仓失败不能被记成一次普通的"风控放行后失败"。
         # 旧实现只认 "force_close"，于是 D-1 引入的 `risk_force_close` 在失败
         # 分支上被静默记成了 approved —— 成功的行对、失败的行错，最难发现的那种。
-        risk_decision=_risk_decision_for(origin),
+        risk_decision=risk_decision_for(origin),
         risk_reason=reason,
     )
 
@@ -384,6 +375,9 @@ async def _settle(
         risk_reason = "订单下落不明：提交后未能取得可信回执"
     elif origin == ORIGIN_GOAL_ACHIEVED:
         risk_reason = f"目标达成，清空持仓（{origin_reason or 'ADR-038'}）"
+    elif origin == ORIGIN_MANUAL_CLOSE:
+        # 人工全平不是风控裁决，也不能读成"风控通过"—— 它没有过常规闸门。
+        risk_reason = f"人工全平（{origin_reason or '用户指令'}）"
     elif force:
         risk_reason = f"强制平仓（{origin_reason or '风控破线'}）"
     else:
@@ -391,7 +385,7 @@ async def _settle(
     await TradeRepository().update_status(
         trade_id,
         status=_TRADE_STATUS.get(order.status, "failed"),
-        risk_decision=_risk_decision_for(origin),
+        risk_decision=risk_decision_for(origin),
         risk_reason=risk_reason,
         quantity=order.filled_qty,
         price=order.avg_price,

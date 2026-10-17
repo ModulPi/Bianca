@@ -375,6 +375,37 @@ async def test_close_all_ignores_the_thresholds_and_keeps_its_own_origin(db, mon
 
 
 @pytest.mark.asyncio
+async def test_manual_close_is_neither_achievement_nor_stop_out(db, monkeypatch):
+    """用户指令下的人工全平：不看阈值，但来源必须独立（ADR-035 的同一理由）。
+
+    记成 `goal_achieved` 会让"这个目标达成过"凭空多出一次；记成
+    `risk_force_close` 则会污染"强制平仓"的统计。两者都不是事实。
+    """
+    fake = FakeCCXT(_FILLED_SELL)
+    _install(monkeypatch, fake)
+    await _snapshot(positions=[_btc(price=50000.0)])
+
+    results = await close_module.force_close(
+        settings=_settings(),
+        params=_params(stop_loss_pct=0.99, max_drawdown_pct=0.99),
+        close_all=True,
+        origin=close_module.ORIGIN_MANUAL_CLOSE,
+    )
+
+    assert len(results) == 1
+    assert results[0]["rule"] == "manual_close"
+    assert fake.created, "人工全平也必须真的走到下单"
+
+    row = await TradeRepository().get_by_id(results[0]["trade_log_id"])
+    assert row.risk_decision == "manual_close"
+    assert "人工全平" in row.risk_reason
+
+    events = await RiskEventRepository().list_recent(limit=5)
+    detail = json.loads(events[0].detail)
+    assert detail["origin"] == "manual_close"
+
+
+@pytest.mark.asyncio
 async def test_the_order_lands_in_the_ledger_like_any_other(db, monkeypatch):
     """紧急不是跳过记账的理由 —— 恰恰相反，事后最需要查的就是这一笔。"""
     fake = FakeCCXT(_FILLED_SELL)

@@ -78,6 +78,11 @@ class DecisionLog(Base):
     market_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     goal_id: Mapped[str | None] = mapped_column(String, nullable=True)
     plan_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 经理自报这次决策对应计划的第几步（ADR-039）。**可空**：HOLD、偏离计划的
+    # 动作、以及解析失败后的兜底 HOLD 都可能对不上某一步 —— 空本身是信息。
+    # 只放在这里，不放到 `trade_logs`：交易经 `decision_id` 就能回溯到这一步，
+    # 存两份只会出现"两边不一致"。
+    plan_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class AgentConfigRow(Base):

@@ -42,6 +42,7 @@ def _ensure_columns(sync_conn) -> None:
         ("decision_logs", (
             "prompt_tokens", "completion_tokens", "total_tokens",
             "prompt", "prompt_variant", "market_data", "goal_id", "plan_id",
+            "plan_step",
         )),
         ("trade_logs", (
             "decision_id",

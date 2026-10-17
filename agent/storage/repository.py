@@ -100,6 +100,7 @@ class DecisionRepository:
         market_data: dict | str | None = None,
         goal_id: str | None = None,
         plan_id: str | None = None,
+        plan_step: int | None = None,
         session: AsyncSession | None = None,
     ) -> DecisionLog:
         """落一条决策记录。
@@ -122,6 +123,7 @@ class DecisionRepository:
             market_data=_as_json(market_data),
             goal_id=goal_id,
             plan_id=plan_id,
+            plan_step=plan_step,
             created_at=_utc_now(),
         )
         if session is not None:

@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
+import uuid
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,10 +29,15 @@ import httpx
 from agent.config import Settings, get_settings
 from agent.llm.provider import LLMEndpoint, resolve_llm_endpoint
 from agent.manager.parser import ParsedReply, ToolCallParseError, parse_reply
-from agent.manager.prompt import build_system_prompt
+from agent.manager.prompt import (
+    build_decision_prompt,
+    build_system_prompt,
+    render_decision_context,
+)
 from agent.manager.readonly import build_readonly_registry
-from agent.manager.schemas import Plan, parse_plan
+from agent.manager.schemas import ManagerDecision, Plan, parse_decision, parse_plan
 from agent.manager.tools import ToolError, ToolRegistry
+from agent.storage.repository import DecisionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +90,32 @@ class ManagerRun:
     # 每一轮模型是用哪种形状回的。**别省这一栏**：实测里第 1 轮它没用 `tools`
     # 字段而是在正文里写原生格式，是这一栏才让人看出来的（§6.4.3）。
     shapes: list[str] = field(default_factory=list)
+
+    @property
+    def used_tools(self) -> list[str]:
+        return [i.name for i in self.invocations]
+
+
+@dataclass
+class DecisionRun:
+    """一次执行决策的完整痕迹。
+
+    `decision` **永远不是 None**：解不出来时它是兜底的 HOLD，而理由写在
+    `errors` / `decision.reason` 里。下游不该出现"这一轮没有决策"这种状态 ——
+    tick 必须做点什么，哪怕就是不动。
+    """
+
+    goal: str
+    decision: ManagerDecision | None
+    final_text: str = ""
+    parse_error: str | None = None
+    transcript: list[dict[str, Any]] = field(default_factory=list)
+    invocations: list[ToolInvocation] = field(default_factory=list)
+    rounds: int = 0
+    usage: dict[str, Any] | None = None
+    errors: list[str] = field(default_factory=list)
+    shapes: list[str] = field(default_factory=list)
+    decision_id: str | None = None
 
     @property
     def used_tools(self) -> list[str]:
@@ -221,6 +253,136 @@ class Manager:
         run.transcript = messages
         run.usage = usage
         return run
+
+    async def decide(
+        self,
+        brief: str,
+        plan: Plan | None,
+        state: Mapping[str, Any],
+        *,
+        max_rounds: int = MAX_ROUNDS,
+        goal_id: str | None = None,
+        plan_id: str | None = None,
+        decisions: DecisionRepository | None = None,
+    ) -> DecisionRun:
+        """执行阶段的一轮决策：调只读工具，最后给一个信号（§6.6 D-2）。
+
+        与 `plan()` 的三处不同，都是有意的：
+
+        1. **解不出来就是 HOLD，不再追问。** 计划可以来回改；执行动作不行 ——
+           为了让模型"再想想"而多花一轮，等于在没有决策的情况下继续持有敞口。
+           失败原因原样记录，下一次 tick 它还有机会。
+        2. **信号必须完整。** 说 BUY 却没给 amount 的，不拿上限替它补 —— 补了
+           就是系统替模型下单。这种回复同样落成 HOLD 并记原因。
+        3. **决策落 `decision_logs`**（R1）。HOLD 与解析失败也落：复盘最常问的
+           恰恰是"为什么没动手"。
+        """
+        if not brief or not brief.strip():
+            raise ValueError("目标不能是空的 —— 没有目标的执行不是执行")
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": build_decision_prompt(self._registry)},
+            {"role": "user", "content": render_decision_context(brief, plan, state)},
+        ]
+        run = DecisionRun(goal=brief.strip(), decision=None)
+        usage: dict[str, Any] | None = None
+        raw_text = ""
+        transport_failed: str | None = None
+
+        for round_no in range(1, max_rounds + 1):
+            run.rounds = round_no
+            try:
+                reply = await self._chat(list(messages))
+            except httpx.HTTPError as exc:
+                transport_failed = f"跟模型说话失败（{type(exc).__name__}）：{exc}"
+                logger.warning(transport_failed)
+                run.errors.append(transport_failed)
+                break
+            if reply.usage:
+                usage = reply.usage
+            raw_text = reply.content
+
+            parsed, parse_error = self._interpret(reply)
+            run.shapes.append(parsed.shape if parsed is not None else "unparsed")
+            if parse_error is not None:
+                run.errors.append(parse_error)
+                messages.append({"role": "assistant", "content": reply.content})
+                messages.append({"role": "user", "content": parse_error})
+                continue
+
+            assert parsed is not None
+            if parsed.calls:
+                self._append_assistant(messages, reply, parsed)
+                for call in parsed.calls:
+                    observation = await self._invoke(call, round_no, run)
+                    messages.append(self._observation_message(call, round_no, observation))
+                continue
+
+            # 不再追问：这一轮的正文就是最终答复，解不出来按 HOLD 落。
+            decision = parse_decision(parsed.text)
+            if decision is None:
+                run.parse_error = (
+                    "这一轮的回复不是可用的信号 JSON，按 HOLD 处理："
+                    f"{parsed.text[:200]!r}"
+                )
+            else:
+                unusable = decision.unusable_reason()
+                if unusable:
+                    run.parse_error = f"信号不完整，按 HOLD 处理：{unusable}"
+                else:
+                    run.decision = decision
+                    run.final_text = parsed.text
+                    run.transcript = messages + [{"role": "assistant", "content": reply.content}]
+                    break
+            run.errors.append(run.parse_error)
+            messages.append({"role": "assistant", "content": reply.content})
+            break
+        else:
+            run.errors.append(f"{max_rounds} 轮之内没有拿到信号")
+
+        if run.decision is None:
+            why = run.parse_error or transport_failed or f"{max_rounds} 轮之内没有拿到信号"
+            run.decision = ManagerDecision(
+                action="HOLD", reason=f"经理没有给出可用信号（{why}），按 HOLD 处理"
+            )
+            run.transcript = messages
+            run.final_text = raw_text
+
+        run.usage = usage
+        await self._save_decision(
+            run, state=state, goal_id=goal_id, plan_id=plan_id, decisions=decisions
+        )
+        return run
+
+    async def _save_decision(
+        self,
+        run: DecisionRun,
+        *,
+        state: Mapping[str, Any],
+        goal_id: str | None,
+        plan_id: str | None,
+        decisions: DecisionRepository | None,
+    ) -> None:
+        """落决策。**这一条写不进去，就不该继续交易** —— 没有记录的自动化没法复盘。"""
+        assert run.decision is not None
+        run.decision_id = uuid.uuid4().hex
+        usage = run.usage or {}
+        repo = decisions or DecisionRepository()
+        await repo.save(
+            decision_id=run.decision_id,
+            model_used=self._endpoint.model,
+            prompt_summary=f"{run.decision.action} {run.decision.symbol or '-'}：{run.decision.reason}",
+            raw_output=run.final_text or "",
+            parsed_signal=run.decision.model_dump(),
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+            total_tokens=usage.get("total_tokens"),
+            prompt=run.transcript,
+            market_data=state.get("market_data") if state else None,
+            goal_id=goal_id,
+            plan_id=plan_id,
+            plan_step=run.decision.plan_step,
+        )
 
     # -- 内部 ---------------------------------------------------------------
 

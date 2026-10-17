@@ -28,7 +28,11 @@ from agent.portfolio.attribution import (
 )
 from agent.portfolio.prices import fetch_prices
 from agent.portfolio.valuation import CASH_ASSETS, Valuation, value_portfolio
-from agent.storage.repository import EquityRepository, OrderRepository
+from agent.storage.repository import (
+    AttributionBaselineRepository,
+    EquityRepository,
+    OrderRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +80,7 @@ class PortfolioView:
                     "asset": g.asset,
                     "exchange_qty": g.exchange_qty,
                     "attributed_qty": g.attributed_qty,
+                    "baseline_qty": g.baseline_qty,
                     "unexplained_qty": g.unexplained_qty,
                 }
                 for g in self.gaps
@@ -89,16 +94,42 @@ def build_view(
     balances: Mapping[str, float],
     prices: Mapping[str, float | None],
     orders: Iterable[object],
+    baseline: Mapping[str, float] | None = None,
 ) -> PortfolioView:
-    """纯合成：余额 + 价格 + 订单账本 → 一张视图。无 I/O。"""
+    """纯合成：余额 + 价格 + 订单账本（+ 期初基准）→ 一张视图。无 I/O。
+
+    `baseline` 是 agent 上线前就存在的持仓（ADR-042）。它和账本分开传，
+    因为两者来源不同：账本是我们写的，基准是第一次看账户时记下的。
+    """
     valuation = value_portfolio(balances, prices)
     attributed, unmapped = attributed_holdings(orders)
-    gaps = compare(_as_floats(balances), attributed)
+    gaps = compare(_as_floats(balances), attributed, dict(baseline or {}))
     return PortfolioView(valuation=valuation, gaps=tuple(gaps), unmapped_symbols=tuple(unmapped))
 
 
 def _as_floats(balances: Mapping[str, float]) -> dict[str, float]:
     return {str(k): float(v or 0.0) for k, v in balances.items()}
+
+
+def _adjusted_unexplained(
+    gaps: Iterable[dict], baseline: Mapping[str, float]
+) -> dict[str, float]:
+    """把历史快照的账外差额换算到**同一基准**上，供 drift 比较。
+
+    ADR-042 之前的快照存的是裸差额（交易所 − 账本），基准是后来才记的；
+    不补这一刀，基线建立后的第一张快照会报出一整串"账外减少"的假警报。
+
+    新快照的 gap 带 `baseline_qty`，说明 `unexplained_qty` 已经是相对基准的，
+    不能再减一次 —— 用**列在不在**判断，而不是按时间戳猜。
+    """
+    out: dict[str, float] = {}
+    for g in gaps:
+        asset = str(g.get("asset") or "")
+        qty = float(g.get("unexplained_qty") or 0.0)
+        if "baseline_qty" not in g:
+            qty -= float(baseline.get(asset, 0.0))
+        out[asset] = qty
+    return out
 
 
 def price_assets(balances: Mapping[str, float]) -> list[str]:
@@ -113,20 +144,45 @@ async def capture(settings: Settings | None = None) -> PortfolioView:
     prices = await fetch_prices(price_assets(exchange), settings=cfg)
     orders = await OrderRepository().list_recent(limit=1000)
 
-    view = build_view(exchange, prices, orders)
     repo = EquityRepository()
+
+    # 期初持仓：账户在 agent 上线前就有的钱，账本永远解释不了（ADR-042）。
+    # 第一次采集时记进 `attribution_baseline`，此后所有快照都相对它算账外。
+    baseline_repo = AttributionBaselineRepository()
+    baseline = await baseline_repo.load()
+    seeded = False
+    if not baseline:
+        first = await repo.first()
+        if first is not None:
+            # 线上库在 ADR-042 之前就采过快照 —— 用最早那张的账外差额当基准，
+            # 这就是"把之前的数据同步进来"：不重写历史行，只把起点记下来。
+            quantities = {
+                g["asset"]: float(g.get("unexplained_qty") or 0.0)
+                for g in json.loads(first.gaps or "[]")
+            }
+            source = f"期初：最早一张权益快照（{first.captured_at}）"
+        else:
+            raw = build_view(exchange, prices, orders)
+            quantities = {g.asset: g.unexplained_qty for g in raw.gaps}
+            source = "期初：本账户第一张权益快照"
+        baseline = await baseline_repo.seed(quantities, source=source)
+        seeded = bool(baseline)
+
+    view = build_view(exchange, prices, orders, baseline=baseline)
     notes = list(view.valuation.notes)
+    if seeded:
+        detail = ", ".join(f"{asset} {qty:g}" for asset, qty in sorted(baseline.items()))
+        notes.append(
+            f"期初持仓已记为归因基准（ADR-042）：{detail}；"
+            "此后只报相对这个基准的变化，不再把它们算作账外"
+        )
 
     # 账外持仓的**变化**才是信号（见 attribution.unexplained_drift）。
-    # 首次快照没有基准，此时整账户都是"账外"，那是期初余额，不是异常。
     previous = await repo.latest()
     if previous is None:
-        notes.append("首次快照：全部未归因持仓视为期初余额，后续只报其变化")
-    else:
-        before = {
-            g["asset"]: float(g.get("unexplained_qty") or 0.0)
-            for g in json.loads(previous.gaps or "[]")
-        }
+        notes.append("首次快照：账外持仓以本次采集为起点，后续只报其变化")
+    elif not seeded:
+        before = _adjusted_unexplained(json.loads(previous.gaps or "[]"), baseline)
         drift = unexplained_drift(before, view.gaps)
         if drift:
             detail = ", ".join(f"{asset} {delta:+.8f}" for asset, delta in drift)
@@ -157,6 +213,7 @@ async def capture(settings: Settings | None = None) -> PortfolioView:
                 "asset": g.asset,
                 "exchange_qty": g.exchange_qty,
                 "attributed_qty": g.attributed_qty,
+                "baseline_qty": g.baseline_qty,
                 "unexplained_qty": g.unexplained_qty,
             }
             for g in view.gaps

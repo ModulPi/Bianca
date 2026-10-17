@@ -511,3 +511,50 @@ async def test_portfolio_age_is_unknown_rather_than_zero(main_db):
     out = await _registry().call("get_portfolio", {})
     assert out["age_seconds"] is None
     assert out["age_note"] is None
+
+
+# --- 期初基准 ≠ 账外（ADR-042）---------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_portfolio_separates_opening_balance_from_unexplained(main_db):
+    """上线前就有的钱要单独报，不能算成"账外持仓" —— 否则模型会一直停手。"""
+    from agent.storage.repository import AttributionBaselineRepository
+
+    await AttributionBaselineRepository().seed(
+        {"USDT": 5000.0, "BTC": 0.00449504}, source="测试：期初"
+    )
+    await _snapshot(
+        equity=10075.0,
+        captured_at="2026-10-18T00:00:00+00:00",
+        gaps=[
+            {"asset": "BTC", "exchange_qty": 0.00449504, "attributed_qty": 0.0,
+             "baseline_qty": 0.00449504, "unexplained_qty": 0.0},
+            {"asset": "USDT", "exchange_qty": 5000.0, "attributed_qty": 0.0,
+             "baseline_qty": 5000.0, "unexplained_qty": 0.0},
+        ],
+    )
+
+    out = await _registry().call("get_portfolio", {})
+
+    assert out["unexplained_positions"] == []
+    assert [b["asset"] for b in out["attribution_baseline"]] == ["BTC", "USDT"]
+    assert out["attribution_baseline"][0]["quantity"] == pytest.approx(0.00449504)
+
+
+@pytest.mark.asyncio
+async def test_portfolio_still_reports_a_real_change_to_the_baseline(main_db):
+    """基准解释的是"本来就有"；它变了，仍然必须出现在账外里。"""
+    await _snapshot(
+        equity=5300.0,
+        captured_at="2026-10-18T00:00:00+00:00",
+        gaps=[
+            {"asset": "USDT", "exchange_qty": 5300.0, "attributed_qty": 0.0,
+             "baseline_qty": 5000.0, "unexplained_qty": 300.0},
+        ],
+    )
+
+    out = await _registry().call("get_portfolio", {})
+
+    assert [g["asset"] for g in out["unexplained_positions"]] == ["USDT"]
+    assert out["unexplained_positions"][0]["unexplained_qty"] == pytest.approx(300.0)

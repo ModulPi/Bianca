@@ -19,6 +19,7 @@ from agent.dialogue.goal import (
 from agent.storage.database import get_session_factory
 from agent.storage.models import (
     AgentConfigRow,
+    AttributionBaseline,
     DecisionLog,
     EquitySnapshotLog,
     GoalLog,
@@ -588,11 +589,67 @@ class EquityRepository:
         async with factory() as db:
             return (await db.execute(stmt)).scalar_one_or_none()
 
+    async def first(self) -> EquitySnapshotLog | None:
+        """最早的那一张快照 —— 期初基准的来源（ADR-042）。没有就返回 None。"""
+        stmt = select(EquitySnapshotLog).order_by(EquitySnapshotLog.captured_at.asc()).limit(1)
+        factory = get_session_factory()
+        async with factory() as db:
+            return (await db.execute(stmt)).scalar_one_or_none()
+
     async def list_recent(self, limit: int = 50) -> list[EquitySnapshotLog]:
         stmt = select(EquitySnapshotLog).order_by(EquitySnapshotLog.captured_at.desc()).limit(limit)
         factory = get_session_factory()
         async with factory() as db:
             return list((await db.execute(stmt)).scalars().all())
+
+
+class AttributionBaselineRepository:
+    """期初持仓基准（ADR-042，见 `models.py::AttributionBaseline`）。
+
+    只有两个动作：读，和**第一次**写。没有 `update()` / `delete()` —— 基准是
+    历史起点，改它等于改历史：昨天还是"期初就有的"，今天被改写一下就成了
+    "从没出现过"。真要重置，是新建一个基准，不是抹掉旧的。
+    """
+
+    async def load(self) -> dict[str, float]:
+        stmt = select(AttributionBaseline)
+        factory = get_session_factory()
+        async with factory() as db:
+            rows = (await db.execute(stmt)).scalars().all()
+        return {row.asset: float(row.quantity) for row in rows}
+
+    async def seed(
+        self,
+        quantities: dict[str, float],
+        *,
+        source: str,
+        established_at: str | None = None,
+    ) -> dict[str, float]:
+        """**只在表为空时**写入。已有基准时原样返回，不覆盖。
+
+        并发下的双写由主键挡住（asset 是主键）：后到的那个会撞唯一约束，
+        而不是把先到的悄悄改成自己的数。
+        """
+        current = await self.load()
+        if current:
+            return current
+        rows = [
+            AttributionBaseline(
+                asset=asset,
+                quantity=float(qty),
+                established_at=established_at or _utc_now(),
+                source=source,
+            )
+            for asset, qty in quantities.items()
+            if abs(float(qty)) > 0
+        ]
+        if not rows:
+            return {}
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add_all(rows)
+            await db.commit()
+        return {row.asset: float(row.quantity) for row in rows}
 
 
 # --- 对话层（阶段 C）---------------------------------------------------------

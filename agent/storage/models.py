@@ -166,6 +166,26 @@ class EquitySnapshotLog(Base):
 Index("idx_equity_captured", EquitySnapshotLog.captured_at.desc())
 
 
+class AttributionBaseline(Base):
+    """期初持仓基准（ADR-042）。
+
+    账户在 agent 上线前就有钱。订单账本只能解释**我们**造成的变动，解释不了
+    那些钱 —— 不把它们单独记下来，"账外持仓"会永远满格，而一个永远满格的
+    告警等于没有告警（见 `attribution.unexplained_drift`）。
+
+    这张表记的是**那一刻的事实**：首次快照时交易所有、账本解释不了的数量。
+    只记一次，不随后续快照改写 —— 它是历史起点，不是滚动状态。真要有变化，
+    体现在 `unexplained_qty` 里（当前 − 账本 − 基准）。
+    """
+
+    __tablename__ = "attribution_baseline"
+
+    asset: Mapped[str] = mapped_column(String, primary_key=True)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    established_at: Mapped[str] = mapped_column(String, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class GoalLog(Base):
     """一个目标的完整生命周期（阶段 C-1，ADR-020 / 021 / 032 / 033）。
 

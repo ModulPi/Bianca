@@ -34,16 +34,24 @@ def split_symbol(symbol: str) -> tuple[str, str] | None:
 
 @dataclass(frozen=True)
 class HoldingGap:
-    """一个资产上，交易所的数与账本的数之间的差。"""
+    """一个资产上，交易所的数与账本（含期初基准）的数之间的差。
+
+    `baseline_qty` 是 **agent 上线前就躺在账户里的数量**（ADR-042）。它不来自
+    订单账本，而是第一次快照时记下的事实 —— 没有它，这些钱会永远被算成
+    "账外"，而一个永远满格的告警等于没有告警。
+
+    三者各归各位：交易所说的 = 账本解释的 + 期初就有的 + 真正解释不了的。
+    """
 
     asset: str
     exchange_qty: float
     attributed_qty: float
+    baseline_qty: float = 0.0
 
     @property
     def unexplained_qty(self) -> float:
-        """账外数量。正 = 账户里有不属于我们的；负 = 我们记了但账户里没有。"""
-        return self.exchange_qty - self.attributed_qty
+        """真正账外的数量。正 = 账户里有不属于我们的；负 = 我们记了但账户里没有。"""
+        return self.exchange_qty - self.attributed_qty - self.baseline_qty
 
     @property
     def explained(self) -> bool:
@@ -100,18 +108,24 @@ def attributed_holdings(orders: Iterable[object]) -> tuple[dict[str, float], lis
 def compare(
     exchange_balances: dict[str, float],
     attributed: dict[str, float],
+    baseline: dict[str, float] | None = None,
 ) -> list[HoldingGap]:
-    """逐资产对比交易所持仓与归因持仓，**包含只在一边出现的资产**。
+    """逐资产对比交易所持仓与（账本 + 期初基准），**包含只在一边出现的资产**。
 
     只在一侧出现的资产正是最该被看见的：账户里凭空有的，或账本里记着而
-    账户里没有的（后者通常意味着成交没落库或对账漏了）。
+    账户里没有的（后者通常意味着成交没落库或对账漏了）；期初有而现在没了
+    同样是信号（说明在我们之外被动过）。
+
+    `baseline` 是期初基准（ADR-042）。缺省为空 = 全部按账外算，兼容旧调用方。
     """
-    assets = sorted(set(exchange_balances) | set(attributed))
+    base = baseline or {}
+    assets = sorted(set(exchange_balances) | set(attributed) | set(base))
     return [
         HoldingGap(
             asset=asset,
             exchange_qty=float(exchange_balances.get(asset, 0.0)),
             attributed_qty=float(attributed.get(asset, 0.0)),
+            baseline_qty=float(base.get(asset, 0.0)),
         )
         for asset in assets
     ]

@@ -27,6 +27,7 @@ from agent.market.repository import KlineRepository
 from agent.portfolio.pnl import drawdown
 from agent.risk.rules import drawdown_breached
 from agent.storage.repository import (
+    AttributionBaselineRepository,
     DecisionRepository,
     EquityRepository,
     RiskEventRepository,
@@ -88,6 +89,7 @@ async def _get_portfolio(args: dict[str, Any], settings: Settings) -> dict[str, 
         return _unknown("还没有任何权益快照：采集侧还没跑过，此刻账户里有什么是未知的")
     gaps = _loads(row.gaps, [])
     unexplained = [g for g in gaps if abs(float(g.get("unexplained_qty") or 0.0)) > 0]
+    baseline = await AttributionBaselineRepository().load()
     # 快照表的节奏不由 `_stale_after_s` 管，所以这里**只报事实、不编阈值**（§6.4.2）。
     age = _snapshot_age_seconds(row.captured_at)
     return {
@@ -106,6 +108,11 @@ async def _get_portfolio(args: dict[str, Any], settings: Settings) -> dict[str, 
         "positions": _loads(row.positions, []),
         "unpriced": _loads(row.unpriced, []),
         "unexplained_positions": unexplained,
+        # 期初就有的持仓（ADR-042）。**它们不是"账外"** —— 是 agent 上线前
+        # 账户里本来就有的钱。单独列出来，免得模型把余额本身当成异常。
+        "attribution_baseline": [
+            {"asset": asset, "quantity": qty} for asset, qty in sorted(baseline.items())
+        ],
         "notes": _loads(row.notes, []),
         "source": "本地权益快照表（由采集侧写）",
     }

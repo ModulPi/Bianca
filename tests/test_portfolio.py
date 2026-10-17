@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -632,3 +633,200 @@ async def test_non_positive_peak_is_refused_not_divided(db):
 
     assert result.known is False
     assert "没有意义" in result.reason
+
+
+# ---------------------------------------------------------------- 期初基准（ADR-042）
+#
+# 账户在 agent 上线前就有钱。裸的「交易所 − 账本」把这些钱永远算成"账外"，
+# 结果是告警永远满格 —— 等于没有告警。基准就是"第一次看账户时它本来有多少"，
+# 记一次，此后账外只报**相对基准**的变化。
+
+
+def test_compare_subtracts_the_opening_baseline():
+    gap = compare({"USDT": 1000.0}, {}, {"USDT": 1000.0})[0]
+    assert gap.baseline_qty == pytest.approx(1000.0)
+    assert gap.unexplained_qty == pytest.approx(0.0)
+    assert gap.explained
+
+
+def test_baseline_assets_stay_visible_even_when_they_leave():
+    """期初有、现在没了 —— 也是信号，不能因为"基准解释过"就消失。"""
+    gap = compare({}, {}, {"USDT": 1000.0})[0]
+    assert gap.unexplained_qty == pytest.approx(-1000.0)
+    assert not gap.explained
+
+
+def test_baseline_defaults_to_empty_for_old_callers():
+    gap = compare({"USDT": 10.0}, {"USDT": 4.0})[0]
+    assert gap.baseline_qty == 0.0
+    assert gap.unexplained_qty == pytest.approx(6.0)
+
+
+def test_view_keeps_the_three_sources_apart():
+    view = build_view(
+        balances={"USDT": 1100.0},
+        prices={},
+        orders=[FakeOrder(symbol="BTCUSDT", filled_qty=0.0)],
+        baseline={"USDT": 1000.0},
+    )
+    gap = {g.asset: g for g in view.gaps}["USDT"]
+    assert gap.exchange_qty == pytest.approx(1100.0)
+    assert gap.attributed_qty == pytest.approx(0.0)
+    assert gap.baseline_qty == pytest.approx(1000.0)
+    assert gap.unexplained_qty == pytest.approx(100.0)
+
+
+async def _capture_with(monkeypatch, balances):
+    from agent.portfolio import service
+
+    async def fake_balance(_settings):
+        return dict(balances)
+
+    async def fake_prices(assets, *, settings, **kwargs):
+        return {a: 65000.0 for a in assets}
+
+    monkeypatch.setattr(service, "_fetch_balance", fake_balance)
+    monkeypatch.setattr(service, "fetch_prices", fake_prices)
+    return await service.capture()
+
+
+@pytest.mark.asyncio
+async def test_first_capture_records_opening_balance_as_baseline(db, monkeypatch):
+    from agent.storage.repository import AttributionBaselineRepository
+
+    view = await _capture_with(monkeypatch, {"USDT": 1000.0, "BTC": 0.01})
+
+    baseline = await AttributionBaselineRepository().load()
+    assert baseline == {"USDT": pytest.approx(1000.0), "BTC": pytest.approx(0.01)}
+    gaps = {g["asset"]: g for g in view.as_dict()["gaps"]}
+    assert gaps["USDT"]["unexplained_qty"] == pytest.approx(0.0)
+    assert gaps["BTC"]["unexplained_qty"] == pytest.approx(0.0)
+    assert any("期初持仓已记为归因基准" in n for n in view.valuation.notes)
+
+    # 落库的 gap 要带 baseline_qty —— 下一次采集靠**它是否在**区分
+    # "这张快照已经相对基准算过"和"这是基准之前的老数据"（见 _adjusted_unexplained）。
+    from agent.storage.repository import EquityRepository
+
+    stored = json.loads((await EquityRepository().latest()).gaps)
+    assert all("baseline_qty" in g for g in stored)
+
+
+@pytest.mark.asyncio
+async def test_baseline_is_seeded_from_the_earliest_snapshot(db, monkeypatch):
+    """线上库在 ADR-042 之前就采过快照：用最早那张当起点，不重写历史。"""
+    from agent.storage.repository import AttributionBaselineRepository, EquityRepository
+
+    await EquityRepository().save(
+        cash_quote=1000.0,
+        holdings_value=0.0,
+        equity=1000.0,
+        positions=[],
+        unpriced=[],
+        gaps=[{"asset": "USDT", "exchange_qty": 1000.0, "attributed_qty": 0.0,
+               "unexplained_qty": 1000.0}],
+        notes=[],
+        captured_at="2026-10-10T16:00:00+00:00",
+    )
+    # 后来的一张，账外差额已经不同 —— 基准必须取**最早**那张，不是最近这张。
+    await EquityRepository().save(
+        cash_quote=970.0,
+        holdings_value=0.0,
+        equity=970.0,
+        positions=[],
+        unpriced=[],
+        gaps=[{"asset": "USDT", "exchange_qty": 970.0, "attributed_qty": 0.0,
+               "unexplained_qty": 970.0}],
+        notes=[],
+        captured_at="2026-10-11T16:00:00+00:00",
+    )
+
+    view = await _capture_with(monkeypatch, {"USDT": 1000.0})
+
+    baseline = await AttributionBaselineRepository().load()
+    assert baseline == {"USDT": pytest.approx(1000.0)}
+    assert {g["asset"]: g for g in view.as_dict()["gaps"]}["USDT"]["unexplained_qty"] == pytest.approx(0.0)
+    # 历史行保持原样 —— 起点是"记下来"，不是"改掉过去"
+    old = await EquityRepository().first()
+    assert json.loads(old.gaps)[0]["unexplained_qty"] == pytest.approx(1000.0)
+
+
+@pytest.mark.asyncio
+async def test_baseline_does_not_move_on_later_captures(db, monkeypatch):
+    from agent.storage.repository import AttributionBaselineRepository
+
+    await _capture_with(monkeypatch, {"USDT": 1000.0})
+    await _capture_with(monkeypatch, {"USDT": 1200.0})
+
+    assert (await AttributionBaselineRepository().load())["USDT"] == pytest.approx(1000.0)
+
+
+@pytest.mark.asyncio
+async def test_external_movement_after_baseline_is_still_flagged(db, monkeypatch):
+    await _capture_with(monkeypatch, {"USDT": 1000.0})
+    view = await _capture_with(monkeypatch, {"USDT": 1200.0})
+
+    gap = {g["asset"]: g for g in view.as_dict()["gaps"]}["USDT"]
+    assert gap["unexplained_qty"] == pytest.approx(200.0)
+    assert any("账外持仓发生变动" in n for n in view.valuation.notes)
+
+
+@pytest.mark.asyncio
+async def test_switchover_from_raw_history_does_not_fake_a_drift(db, monkeypatch):
+    """基准建立后的第一张快照不能报"账外减少了一整笔期初余额"。"""
+    from agent.storage.repository import EquityRepository
+
+    await EquityRepository().save(
+        cash_quote=1000.0,
+        holdings_value=0.0,
+        equity=1000.0,
+        positions=[],
+        unpriced=[],
+        gaps=[{"asset": "USDT", "exchange_qty": 1000.0, "attributed_qty": 0.0,
+               "unexplained_qty": 1000.0}],
+        notes=[],
+        captured_at="2026-10-10T16:00:00+00:00",
+    )
+
+    view = await _capture_with(monkeypatch, {"USDT": 1000.0})
+
+    assert not any("账外持仓发生变动" in n for n in view.valuation.notes)
+
+
+@pytest.mark.asyncio
+async def test_seed_refuses_to_overwrite_an_existing_baseline(db):
+    """基准是历史起点：第二次 seed 不覆盖，改历史等于让昨天的期初消失。"""
+    from agent.storage.repository import AttributionBaselineRepository
+
+    repo = AttributionBaselineRepository()
+    first = await repo.seed({"USDT": 1000.0}, source="第一次")
+    second = await repo.seed({"USDT": 9.9}, source="第二次")
+
+    assert first == second == {"USDT": pytest.approx(1000.0)}
+    assert await repo.load() == {"USDT": pytest.approx(1000.0)}
+
+
+@pytest.mark.asyncio
+async def test_a_raw_previous_snapshot_is_compared_on_the_baseline(db, monkeypatch):
+    """基准已经记下、上一张却是老格式（裸差额）时，不能把它当成"账外变化了"。
+
+    真实边界是"基准建立后进程在写快照前崩了"：下一轮看到的老行仍是裸差额。
+    不补这一刀，会报出一整笔假警报 —— 而假警报会训练人忽略真警报。
+    """
+    from agent.storage.repository import EquityRepository
+
+    await _capture_with(monkeypatch, {"USDT": 1000.0})
+    await EquityRepository().save(
+        cash_quote=1000.0,
+        holdings_value=0.0,
+        equity=1000.0,
+        positions=[],
+        unpriced=[],
+        gaps=[{"asset": "USDT", "exchange_qty": 1000.0, "attributed_qty": 0.0,
+               "unexplained_qty": 1000.0}],
+        notes=[],
+        captured_at="2026-10-19T00:00:00+00:00",
+    )
+
+    view = await _capture_with(monkeypatch, {"USDT": 1000.0})
+
+    assert not any("账外持仓发生变动" in n for n in view.valuation.notes)

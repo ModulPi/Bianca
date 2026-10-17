@@ -321,3 +321,32 @@ class PortfolioResponse(BaseModel):
     # 无法参与归因的 symbol 与其它说明都折在这里：快照表只有这一列自由文本，
     # 单独开一个字段会在 GET 路径上恒为空，那是个会骗人的字段。
     notes: list[str] = []
+
+
+class DialogueTextRequest(BaseModel):
+    """用户说的一句话。空串不放行 —— 「说了一句空话」不是一种意图。"""
+
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text 不能是空的")
+        return value
+
+
+class DialogueReply(BaseModel):
+    """对话层一轮的结果。`text` 是**回给用户看的话**，其余是给程序看的。
+
+    注意 `plan_id` 的语义：它是**这一次规划尝试**的 `plans` 行（成功失败都有），
+    不等于「目标已经有计划」。后者看目标行的 `plan_id`。
+    """
+
+    goal_id: str
+    status: str
+    text: str
+    changed: list[str] = []
+    unclear: list[str] = []
+    activated: bool = False
+    plan_id: str | None = None

@@ -40,6 +40,18 @@ ROLE_USER = "user"
 ROLE_ASSISTANT = "assistant"
 
 
+class GoalNotFound(ValueError):
+    """目标 id 不存在。
+
+    单独一个类型是为了让 HTTP 层映射成 **404** 而不是 422 —— 「你给的 id 不对」
+    和「你的请求内容不对」对调用方是两件事。
+    """
+
+
+class OpenGoalExists(ValueError):
+    """已经有一个没结束的目标。阶段 C 一次只跑一个（§8 第 3 条），映射成 409。"""
+
+
 @dataclass
 class Reply:
     """一轮对话的结果。
@@ -180,7 +192,7 @@ class Dialogue:
         if open_goal is not None:
             # 阶段 C 一次只跑一个（§8 第 3 条）。开着两个而又"只能有一个当前目标"，
             # 那个歧义迟早会以"改了 A 结果动的是 B"的形式冒出来。
-            raise ValueError(
+            raise OpenGoalExists(
                 f"已经有一个没结束的目标（{open_goal.id}，状态 {open_goal.status}）。"
                 "阶段 C 一次只跑一个 —— 先把它结束掉（abort）再开新的。"
             )
@@ -224,11 +236,17 @@ class Dialogue:
 
     # ---- 确认（独立动作）----------------------------------------------------
 
-    async def confirm(self, goal_id: str, *, equity: float) -> Reply:
+    async def confirm(
+        self, goal_id: str, *, equity: float, equity_captured_at: str | None = None
+    ) -> Reply:
         """确认 → `active`。**这是唯一能让目标生效的入口**（ADR-037）。
 
         `equity` 必填且没有默认值：它是收益率的分母（ADR-033），
         给个默认值就等于让"拿什么当基准"这件事从代码里看不见了。
+
+        `equity_captured_at` 是那个数的来源时刻（HTTP 载体用的是交易所快照的
+        `captured_at`）。**有就念出来** —— 用户有权知道这个基准有多旧，
+        而"激活这一刻读的"这种话只在调用方真的刚刚读过时才成立。
         """
         row = await self._require(goal_id)
         draft = GoalDraft.from_row(row)
@@ -250,7 +268,7 @@ class Dialogue:
             )
 
         row = await self._goals.activate(goal_id, equity=equity, settings=self._settings)
-        text = self._locked_text(row, equity)
+        text = self._locked_text(row, equity, captured_at=equity_captured_at)
         await self._messages.append(goal_id=goal_id, role=ROLE_ASSISTANT, content=text)
         return Reply(
             goal_id=goal_id,
@@ -420,7 +438,7 @@ class Dialogue:
     async def _require(self, goal_id: str) -> GoalLog:
         row = await self._goals.get(goal_id)
         if row is None:
-            raise ValueError(f"没有这个目标：{goal_id}")
+            raise GoalNotFound(f"没有这个目标：{goal_id}")
         return row
 
     async def _reply(
@@ -462,17 +480,20 @@ class Dialogue:
             )
         return f"这个目标已经结束了（{status}），改不了。要接着做就重新提一个。"
 
-    def _locked_text(self, row: GoalLog, equity: float) -> str:
+    def _locked_text(
+        self, row: GoalLog, equity: float, *, captured_at: str | None = None
+    ) -> str:
         """锁上之后念什么。**念的是冻结下来的那几个数，不是配置里现在是什么。**
 
         这里读 `row.risk_snapshot` 而不是 `self._settings` —— 两者在激活之后就可能
         不一样了（有人改了 `.env`），而用户要确认的是**冻住的那一份**。
         """
         frozen = json.loads(row.risk_snapshot or "{}")
+        source = f"交易所快照 {captured_at}，ADR-033" if captured_at else "ADR-033"
         lines = [
             "好，目标锁成 active 了。",
             "",
-            f"  基准权益  {equity:g} USDT（激活这一刻读的，ADR-033）",
+            f"  基准权益  {equity:g} USDT（{source}）",
             f"  截止时间  {row.deadline_at}",
         ]
         if "max_drawdown_pct" in frozen:

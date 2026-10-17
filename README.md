@@ -18,7 +18,7 @@
 | 部署 | Docker(API) + SQLite |
 | 界面 | CLI / curl（无 Web 前端） |
 
-**下一步方向（目标驱动，见 [PRD §2.4](docs/PRD-Bianca.md) 与 [经理 Agent 与对话层设计](docs/outline-design/模块设计/经理Agent与对话层设计-Bianca.md)）：** 用户以对话方式给出一个交易目标，由**经理 Agent** 理解目标、指挥手下的子 Agent（行情 / 分析 / 风控 / 执行）执行并追踪进度，直到达成 / 中止 / 到期。**该方向的授权级别等关键边界尚未拍板，实现未开工。**
+**下一步方向（目标驱动，见 [PRD §2.4](docs/PRD-Bianca.md) 与 [经理 Agent 与对话层设计](docs/outline-design/模块设计/经理Agent与对话层设计-Bianca.md)）：** 用户以对话方式给出一个交易目标，由**经理 Agent** 理解目标、指挥手下的子 Agent（行情 / 分析 / 风控 / 执行）执行并追踪进度，直到达成 / 中止 / 到期。**对话层（阶段 C）已落地**：多轮修正、独立确认动作、计划落库，经 HTTP 端点与薄 CLI 使用（见下方「对话层」）；**执行循环（阶段 D）尚未开工**。
 
 ## 技术栈
 
@@ -73,6 +73,47 @@ curl -X POST http://127.0.0.1:8000/api/v1/agent/start
 ```
 
 **切换本地 Ollama：** 修改 `.env` 中 `LLM_PROVIDER=ollama` 及相关 URL/模型，重启 API 即可。
+
+## 对话层（阶段 C，ADR-032）
+
+用自然语言提一个交易目标，经理回问缺的维度、复述、等你**单独确认**，然后做计划：
+
+```bash
+BASE=http://127.0.0.1:8000/api/v1
+
+# 1. 说一个目标（不完整也行，它会点名问缺哪个维度）
+curl -s -X POST $BASE/dialogue/start \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"我想用 1000 USDT 试水，两周内做到 1100，最多亏 5% 就停"}'
+
+# 2. 补充 / 修正（只改提到的那个维度）
+curl -s -X POST $BASE/dialogue/<goal_id>/say \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"做 BTCUSDT"}'
+
+# 3. 采集一次交易所权益快照（确认的基准权益取它，ADR-033）
+curl -s -X POST $BASE/portfolio/snapshot
+
+# 4. 确认 —— 正文里说「对」不算确认，这一步才是（ADR-037）
+curl -s -X POST $BASE/dialogue/<goal_id>/confirm
+
+# 5. 让经理做计划并落库
+curl -s -X POST $BASE/dialogue/<goal_id>/plan
+```
+
+薄 CLI（只是拼上面这些请求，不含任何判断）：
+
+```bash
+python -m agent.dialogue.cli start "用 1000 USDT 做 BTCUSDT，两周内赚 10%，最多亏 5% 就停"
+python -m agent.dialogue.cli say <goal_id> "回撤放到 8%"
+python -m agent.dialogue.cli show
+python -m agent.dialogue.cli confirm <goal_id>
+python -m agent.dialogue.cli plan <goal_id>
+```
+
+> **⚠️ PoC 阶段没有鉴权。** 这些端点能改目标、能触发计划，只能绑在
+> `127.0.0.1` 上（`docker-compose.yml` 已如此绑定）。不要把它暴露到公网，
+> 也不要把端口映射改成 `0.0.0.0`。
 
 ## 许可证
 

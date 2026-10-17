@@ -14,6 +14,8 @@ from agent.api.schemas import (
     BalanceResponse,
     DecisionListResponse,
     DecisionLogItem,
+    DialogueReply,
+    DialogueTextRequest,
     DrawdownResetRequest,
     DrawdownResetResponse,
     HealthResponse,
@@ -31,6 +33,7 @@ from agent.api.schemas import (
     UsageSummaryResponse,
 )
 from agent.config import get_settings
+from agent.dialogue import Dialogue, GoalNotFound, OpenGoalExists, Reply
 from agent.exchange.spot_demo import SpotDemoExchange, check_binance_demo
 from agent.exchange._client import format_binance_error
 from agent.graph.supervisor import run_agent_tick
@@ -41,6 +44,7 @@ from agent.storage.database import get_engine
 from agent.storage.repository import (
     DecisionRepository,
     EquityRepository,
+    GoalRepository,
     OrderRepository,
     RiskEventRepository,
     TradeRepository,
@@ -484,3 +488,121 @@ async def market_backfill() -> BackfillResponse:
     """手动触发历史回补。幂等可重入；已在跑则直接返回。"""
     result = await get_collector().backfill_history_now()
     return BackfillResponse(**result)
+
+
+# ---- 对话层（阶段 C-5，ADR-032）----------------------------------------------
+#
+# **每条请求新建一个 `Dialogue`**：会话状态全在库里，进程内不留状态。
+# 这样重启、多 worker 都不会让「当前目标是哪个」分叉。
+#
+# 这几个端点**不做额外的智能**，动作与 `Dialogue` 的方法一一对应。
+# 业务上的「拒绝」（未确认就规划、已生效不让改）是 `Reply.text`，
+# 不是 HTTP 错误 —— 它们是这一层正常的工作结果。
+
+
+def _dialogue_reply(reply: Reply) -> DialogueReply:
+    return DialogueReply(
+        goal_id=reply.goal_id,
+        status=reply.status.value,
+        text=reply.text,
+        changed=reply.changed,
+        unclear=reply.unclear,
+        activated=reply.activated,
+        plan_id=reply.plan_id,
+    )
+
+
+def _dialogue_error(exc: ValueError) -> HTTPException:
+    """业务异常 → HTTP。只分三种，**别把"拒绝"也塞进来**（见上）。"""
+    if isinstance(exc, GoalNotFound):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, OpenGoalExists):
+        return HTTPException(status_code=409, detail=str(exc))
+    return HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/dialogue/start", response_model=DialogueReply)
+async def dialogue_start(body: DialogueTextRequest) -> DialogueReply:
+    """开一个目标。用户开口那一刻建行，状态恒为 `proposed`。"""
+    try:
+        reply = await Dialogue(settings=get_settings()).start(body.text)
+    except ValueError as exc:
+        raise _dialogue_error(exc) from exc
+    return _dialogue_reply(reply)
+
+
+@router.get("/dialogue/current", response_model=DialogueReply)
+async def dialogue_current() -> DialogueReply:
+    """当前未结束的目标，等价于一次 `resume()`。没有就 404 —— 不编一个空目标。"""
+    row = await GoalRepository().open_goal()
+    if row is None:
+        raise HTTPException(status_code=404, detail="当前没有未结束的目标")
+    try:
+        reply = await Dialogue(settings=get_settings()).resume(row.id)
+    except ValueError as exc:
+        raise _dialogue_error(exc) from exc
+    return _dialogue_reply(reply)
+
+
+@router.get("/dialogue/{goal_id}", response_model=DialogueReply)
+async def dialogue_show(goal_id: str) -> DialogueReply:
+    """把当前目标重念一遍，**不读任何新话**。"""
+    try:
+        reply = await Dialogue(settings=get_settings()).resume(goal_id)
+    except ValueError as exc:
+        raise _dialogue_error(exc) from exc
+    return _dialogue_reply(reply)
+
+
+@router.post("/dialogue/{goal_id}/say", response_model=DialogueReply)
+async def dialogue_say(goal_id: str, body: DialogueTextRequest) -> DialogueReply:
+    """用户又说了一句。**这条路永远不会激活目标**（ADR-037）。"""
+    try:
+        reply = await Dialogue(settings=get_settings()).say(goal_id, body.text)
+    except ValueError as exc:
+        raise _dialogue_error(exc) from exc
+    return _dialogue_reply(reply)
+
+
+@router.post("/dialogue/{goal_id}/confirm", response_model=DialogueReply)
+async def dialogue_confirm(goal_id: str) -> DialogueReply:
+    """确认 → `active`。**唯一能让目标生效的入口**（ADR-037）。
+
+    基准权益取**最近一次交易所快照**（ADR-033），不从请求体来 ——
+    ADR-033 要的是交易所说的权益，不是调用方说的数。没有快照就 409，
+    并指路去采一次：`POST /api/v1/portfolio/snapshot`。
+    确认自身不打交易所，所以交易所不通时它仍然能用（那正是分开的理由）。
+    """
+    # 先判目标存在，再判快照：**id 给错了就是 id 错了**，
+    # 不该因为"碰巧还没有快照"被报成另一件事。
+    if await GoalRepository().get(goal_id) is None:
+        raise HTTPException(status_code=404, detail=f"没有这个目标：{goal_id}")
+
+    snapshot = await EquityRepository().latest()
+    if snapshot is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "还没有权益快照，确认要以交易所的实际权益为基准（ADR-033）。"
+                "先 POST /api/v1/portfolio/snapshot 采集一次。"
+            ),
+        )
+    try:
+        reply = await Dialogue(settings=get_settings()).confirm(
+            goal_id,
+            equity=snapshot.equity,
+            equity_captured_at=snapshot.captured_at,
+        )
+    except ValueError as exc:
+        raise _dialogue_error(exc) from exc
+    return _dialogue_reply(reply)
+
+
+@router.post("/dialogue/{goal_id}/plan", response_model=DialogueReply)
+async def dialogue_plan(goal_id: str) -> DialogueReply:
+    """让经理做一份计划并落库（C-4）。首次失败可以重试；已有计划就拒绝。"""
+    try:
+        reply = await Dialogue(settings=get_settings()).plan(goal_id)
+    except ValueError as exc:
+        raise _dialogue_error(exc) from exc
+    return _dialogue_reply(reply)

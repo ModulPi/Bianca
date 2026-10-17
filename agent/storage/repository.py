@@ -24,6 +24,7 @@ from agent.storage.models import (
     GoalLog,
     MessageLog,
     OrderLog,
+    PlanLog,
     RiskEvent,
     TradeLog,
 )
@@ -772,6 +773,67 @@ class MessageRepository:
             .where(MessageLog.goal_id == goal_id)
             .order_by(MessageLog.created_at.asc())
             .limit(limit)
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            return list((await db.execute(stmt)).scalars().all())
+
+
+class PlanRepository:
+    """规划尝试（见 `agent/storage/models.py::PlanLog`）。
+
+    这里收的是**已经拆成列的值**，不收 `ManagerRun` —— 那会让
+    `storage → manager` 多一条依赖，而 manager 自己已经在读数据面了。
+    `ManagerRun → 列` 的适配放在对话层（它本来就同时知道两边）。
+    """
+
+    async def create(
+        self,
+        *,
+        goal_id: str,
+        plan: str | None,
+        plan_shape: str,
+        final_text: str,
+        transcript: list[dict],
+        invocations: list[dict],
+        shapes: list[str],
+        usage: dict | None,
+        errors: list[str],
+        rounds: int,
+        plan_id: str | None = None,
+    ) -> PlanLog:
+        row = PlanLog(
+            id=plan_id or uuid.uuid4().hex,
+            goal_id=goal_id,
+            plan=plan,
+            plan_shape=plan_shape,
+            final_text=final_text,
+            transcript=json.dumps(transcript, ensure_ascii=False),
+            invocations=json.dumps(invocations, ensure_ascii=False),
+            shapes=json.dumps(shapes, ensure_ascii=False),
+            usage=json.dumps(usage, ensure_ascii=False) if usage is not None else None,
+            errors=json.dumps(errors, ensure_ascii=False),
+            rounds=rounds,
+            created_at=_utc_now(),
+        )
+        factory = get_session_factory()
+        async with factory() as db:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row
+
+    async def get(self, plan_id: str) -> PlanLog | None:
+        factory = get_session_factory()
+        async with factory() as db:
+            return await db.get(PlanLog, plan_id)
+
+    async def for_goal(self, goal_id: str) -> list[PlanLog]:
+        """按时间**倒序** —— 看"最近一次尝试"比看第一次更常用。"""
+        stmt = (
+            select(PlanLog)
+            .where(PlanLog.goal_id == goal_id)
+            .order_by(PlanLog.created_at.desc())
         )
         factory = get_session_factory()
         async with factory() as db:

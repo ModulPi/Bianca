@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from agent.config import Settings
@@ -30,10 +30,11 @@ from agent.dialogue.extract import Extract
 from agent.dialogue.extract import extract as _default_extract
 from agent.dialogue.goal import GoalDraft, GoalStatus
 from agent.dialogue.retell import retell
-from agent.storage.models import GoalLog
+from agent.storage.models import GoalLog, PlanLog
 
 if TYPE_CHECKING:  # pragma: no cover
-    from agent.storage.repository import GoalRepository, MessageRepository
+    from agent.manager.loop import Manager
+    from agent.storage.repository import GoalRepository, MessageRepository, PlanRepository
 
 ROLE_USER = "user"
 ROLE_ASSISTANT = "assistant"
@@ -55,6 +56,69 @@ class Reply:
     changed: list[str] = field(default_factory=list)
     unclear: list[str] = field(default_factory=list)
     activated: bool = False
+    #: 这一次尝试对应的 `plans` 行（成功失败都有）。**它不等于"目标已经有计划"** ——
+    #: 只有 `goal.plan_id` 有值才是。分两个字段就是为了让这两件事别混。
+    plan_id: str | None = None
+
+
+def goal_brief(row: GoalLog) -> str:
+    """把**已确认**的目标渲染成给经理的一段话（C-4 的输入）。
+
+    喂的是生效值，不是用户口述值：
+
+      · 回撤线取 `risk_snapshot` 里冻住的那个（ADR-036 / ADR-021）；
+      · 收益率基准取 `baseline_equity`（ADR-033）。
+
+    这两条都是为了让计划建立在**执行时真的会成立**的数上。拿用户说的 5%
+    去拆计划、而实际会在 3% 停，那份计划从第一行起就是错的。
+
+    顺带把只读的风控边界也给它 —— 一个不知道单笔上限的经理，会做出一个
+    第一条就执行不了的计划。
+    """
+    symbols = json.loads(row.symbols) if row.symbols else []
+    frozen = json.loads(row.risk_snapshot or "{}")
+
+    lines = ["已确认的目标："]
+    if symbols:
+        lines.append(f"- 标的：{'、'.join(symbols)}")
+    if row.target_return_pct is not None:
+        lines.append(f"- 收益目标：+{row.target_return_pct * 100:g}%")
+    if "max_drawdown_pct" in frozen:
+        stated = row.max_drawdown_pct
+        note = ""
+        # 只在**配置赢**的时候解释差异。用户说得更严（2% vs 配置 5%）时，
+        # 生效值就是他要的那个数，多一句「取更紧的」反而会让他以为被改了。
+        if stated is not None and float(stated) > float(frozen["max_drawdown_pct"]) + 1e-12:
+            note = f"（用户说的 {float(stated) * 100:g}% 更宽，取更紧的那个）"
+        lines.append(f"- 回撤上限（生效）：{float(frozen['max_drawdown_pct']) * 100:g}%{note}")
+    if row.horizon_hours is not None:
+        lines.append(f"- 时间窗：{row.horizon_hours:g} 小时")
+    if row.baseline_equity is not None:
+        lines.append(f"- 基准权益：{row.baseline_equity:g} USDT（收益率按它算，ADR-033）")
+
+    # 量纲在这里显式写出来，不靠字段名去猜：`max_trade_amount` 是 USDT，
+    # `max_position_pct` 是比例。猜错一次，经理就会拿到一个差 100 倍的边界。
+    bounds = [
+        ("单笔上限", "max_trade_amount", "usdt"),
+        ("每日亏损上限", "daily_loss_limit", "usdt"),
+        ("最大仓位", "max_position_pct", "pct"),
+        ("单笔止损", "stop_loss_pct", "pct"),
+    ]
+    shown_bounds = [
+        (label, float(frozen[key]), unit) for label, key, unit in bounds if key in frozen
+    ]
+    if shown_bounds:
+        lines.append("- 风控边界（只读，ADR-021）：")
+        for label, value, unit in shown_bounds:
+            if unit == "pct":
+                lines.append(f"    · {label}：{value * 100:g}%")
+            else:
+                lines.append(f"    · {label}：{value:g} USDT")
+
+    lines.append("- 授权：全自动（ADR-018）")
+    lines.append("")
+    lines.append(f"用户原话：「{row.raw_text}」")
+    return "\n".join(lines)
 
 
 def _as_record(parsed: Extract) -> dict[str, Any]:
@@ -85,6 +149,8 @@ class Dialogue:
         settings: Settings,
         goals: GoalRepository | None = None,
         messages: MessageRepository | None = None,
+        plans: PlanRepository | None = None,
+        manager: Manager | None = None,
         extractor: Callable[[str], Extract] | None = None,
     ) -> None:
         # 仓库在这里**才**导入，不在模块顶层。`agent.storage.repository` 自己要
@@ -94,11 +160,16 @@ class Dialogue:
         #
         # 这两个类本来就只是**默认值**（构造函数收的就是注入），所以推迟导入
         # 没有改变任何设计。
-        from agent.storage.repository import GoalRepository, MessageRepository
+        from agent.storage.repository import GoalRepository, MessageRepository, PlanRepository
 
         self._settings = settings
         self._goals = goals if goals is not None else GoalRepository()
         self._messages = messages if messages is not None else MessageRepository()
+        self._plans = plans if plans is not None else PlanRepository()
+        # 经理也推迟到第一次规划时才建：构造 `Manager` 会去建工具注册表、
+        # 解析端点，而**起草和确认根本用不上它**。让 `Dialogue` 在没有模型的
+        # 环境里也能完整跑完 C-1~C-3，是这一层能离线测的前提。
+        self._manager = manager
         self._read_text = extractor if extractor is not None else _default_extract
 
     # ---- 用户开口 ----------------------------------------------------------
@@ -189,7 +260,162 @@ class Dialogue:
             activated=True,
         )
 
+    # ---- 规划（独立动作，C-4）------------------------------------------------
+
+    async def plan(self, goal_id: str) -> Reply:
+        """让经理给这个目标做一份计划，并落库（C-4）。
+
+        **和 `confirm()` 分开是有意的。** `confirm()` 是确定的闸门，必须瞬时、
+        可离线；让它顺带调模型，模型一挂就会留下「目标已生效、计划没有」的半状态，
+        而那条半状态既没法测、也没法解释。分开之后，确认照旧确定，
+        规划失败只是一个**可以重试的动作**。
+
+        喂给经理的是 `goal_brief()`：已确认的**生效值**，不是用户口述值。
+        """
+        row = await self._require(goal_id)
+
+        if row.status != GoalStatus.ACTIVE.value:
+            text = (
+                f"这个目标现在是 {row.status}，还不能规划。"
+                "经理拿到的必须是**确认之后冻住的生效值**（ADR-021 / ADR-036），"
+                "目标没生效就没有那些值 —— 先走确认，把它变成 active。"
+            )
+            return await self._refuse_reply(row, text)
+
+        if row.plan_id:
+            text = (
+                f"这个目标已经有计划了（plans.id = {row.plan_id}），不重规划。"
+                "计划一旦挂上就是执行依据，悄悄换一份等于把「当时为什么这么做」"
+                "的答案改掉（ADR-019 R1）。真要重来，先中止这个目标、重新提一个。"
+            )
+            return await self._refuse_reply(row, text)
+
+        attempt_errors: list[str] = []
+        try:
+            run = await self._manager_or_build().plan(goal_brief(row))
+        except Exception as exc:  # noqa: BLE001 — 规划失败也得留一行，见下
+            # `Manager.plan()` 自己会把传输失败吞进 `run.errors` 返回；走到这里的
+            # 是那之外坏掉的（端点没配、工具注册表起不来、我们自己的 bug）。
+            # **照样落一行** —— "这次尝试发生过"本身就是要能查到的事实。
+            run = None
+            attempt_errors.append(f"规划过程抛了异常（{type(exc).__name__}）：{exc}")
+
+        if run is None:
+            attempt = await self._plans.create(
+                goal_id=goal_id,
+                plan=None,
+                plan_shape="none",
+                final_text="",
+                transcript=[],
+                invocations=[],
+                shapes=[],
+                usage=None,
+                errors=attempt_errors,
+                rounds=0,
+            )
+            attached = False
+        else:
+            attempt = await self._plans.create(
+                goal_id=goal_id,
+                # `Plan` 是 pydantic 模型，直接序列化 —— 不在这里手工拼 dict，
+                # 手工拼就会和 `parse_plan()` 认得的那份形状各走各的。
+                plan=run.plan.model_dump_json() if run.plan is not None else None,
+                plan_shape=run.plan_shape,
+                final_text=run.final_text,
+                transcript=run.transcript,
+                invocations=[asdict(invocation) for invocation in run.invocations],
+                shapes=run.shapes,
+                usage=run.usage,
+                errors=run.errors,
+                rounds=run.rounds,
+            )
+            attached = run.plan is not None
+            if attached:
+                # **只有解出来了才挂。** 拿最后一段散文顶上去，会让「有 plan_id」
+                # 看起来像「有计划」，而阶段 D 会照着它去执行。
+                row = await self._goals.attach_plan(goal_id, attempt.id)
+
+        text = self._plan_text(attempt, attached=attached)
+        await self._messages.append(goal_id=goal_id, role=ROLE_ASSISTANT, content=text)
+        return Reply(
+            goal_id=goal_id,
+            status=GoalStatus(row.status),
+            text=text,
+            draft=GoalDraft.from_row(row),
+            # 这一次尝试的行 —— **成功失败都一样给**。调用方要看"目标有没有计划"
+            # 得看 `status` 之外的 `goal.plan_id`，别拿这个字段当那个用。
+            plan_id=attempt.id,
+        )
+
     # ---- 内部 --------------------------------------------------------------
+
+    def _manager_or_build(self) -> Manager:
+        if self._manager is None:
+            from agent.manager.loop import Manager as _Manager
+
+            self._manager = _Manager(settings=self._settings)
+        return self._manager
+
+    async def _refuse_reply(self, row: GoalLog, text: str) -> Reply:
+        """拒绝一个动作，但**话照记**（照 C-3 的规矩）。"""
+        await self._messages.append(goal_id=row.id, role=ROLE_ASSISTANT, content=text)
+        return Reply(
+            goal_id=row.id,
+            status=GoalStatus(row.status),
+            text=text,
+            draft=GoalDraft.from_row(row),
+        )
+
+    @staticmethod
+    def _plan_text(attempt: PlanLog, *, attached: bool) -> str:
+        """念计划。**念的是库里那一行**，不是内存里的 `run` —— 这样用户看到的
+        就是事后翻记录时看到的同一份东西。"""
+        errors = json.loads(attempt.errors or "[]")
+
+        if not attached:
+            lines = ["经理没有给出能用的计划。"]
+            if errors:
+                lines.append("")
+                lines.extend(f"  · {err}" for err in errors)
+            lines += [
+                "",
+                f"这次尝试记下来了（plans.id = {attempt.id}，形态 {attempt.plan_shape}），"
+                "但**没有挂到目标上** —— 目标仍然没有计划。"
+                "可以再试一次：没解出计划不占用「已有计划」那个位置。",
+            ]
+            return "\n".join(lines)
+
+        plan = json.loads(attempt.plan or "{}")
+        lines = [f"计划出来了，已挂到目标上（plans.id = {attempt.id}）。", ""]
+        lines.append(f"  目标  {plan.get('objective', '')}")
+        lines.append("")
+        for number, step in enumerate(plan.get("steps") or [], 1):
+            lines.append(f"  {number}. {step.get('what', '')}")
+            if step.get("why"):
+                lines.append(f"     依据：{step['why']}")
+            if step.get("tool"):
+                lines.append(f"     工具：{step['tool']}")
+        for key, title in (
+            ("stop_conditions", "什么时候停"),
+            ("assumptions", "它假设了什么"),
+            ("risks", "它自己说的风险"),
+        ):
+            items = plan.get(key) or []
+            if items:
+                lines.append("")
+                lines.append(f"  {title}：")
+                lines.extend(f"    · {item}" for item in items)
+        if errors:
+            # 成功也可能带着前几轮的错误（比如第一轮没调工具被催了一次）。
+            # **别把它们藏起来**：计划是从那几轮之后长出来的。
+            lines.append("")
+            lines.append("  过程中有几处值得看一眼：")
+            lines.extend(f"    · {err}" for err in errors)
+        lines += [
+            "",
+            "这只是做法，不下单 —— 阶段 C 不执行，链尾还在阶段 D。",
+        ]
+        return "\n".join(lines)
 
     async def _require(self, goal_id: str) -> GoalLog:
         row = await self._goals.get(goal_id)

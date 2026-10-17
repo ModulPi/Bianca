@@ -18,7 +18,7 @@ from agent.dialogue.goal import (
     risk_snapshot,
 )
 from agent.dialogue.retell import retell
-from agent.dialogue.session import ROLE_ASSISTANT, ROLE_USER, Dialogue, Reply
+from agent.dialogue.session import ROLE_ASSISTANT, ROLE_USER, Dialogue, Reply, goal_brief
 
 __all__ = [
     "AUTONOMY_FULL",
@@ -36,6 +36,7 @@ __all__ = [
     "check_transition",
     "effective_drawdown_limit",
     "extract",
+    "goal_brief",
     "retell",
     "risk_snapshot",
 ]

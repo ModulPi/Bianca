@@ -206,7 +206,9 @@ class GoalLog(Base):
     # ---- ADR-021：风控参数在 `active` 那一刻固化，之后只读 ----
     risk_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # 计划（C-4 填）。填上之后 trade_logs / decision_logs 的 goal_id/plan_id 才有生产者。
+    # 计划（C-4 填），指向 `plans.id`。**注意别把这句话说过头**：填上之后只有
+    # 「目标 → 计划」这一段通了；`trade_logs` / `decision_logs` 的 goal_id/plan_id
+    # 仍要等阶段 D 的执行循环去写 —— C 不下单，那两列在本阶段没有生产者。
     plan_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     created_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -239,4 +241,42 @@ class MessageLog(Base):
 
 
 Index("idx_messages_goal", MessageLog.goal_id, MessageLog.created_at)
+
+
+class PlanLog(Base):
+    """一次规划尝试（C-4）。**成功失败都留一行。**
+
+    为什么失败也留：R1 要的是"当时为什么这么做"，而"计划没出来"本身就是一个
+    需要能解释的结果（模型没给、传输挂了、解析器不认）。只留成功的那些，
+    事后看到的是"每次都有计划"，那是不真的。
+
+    `plan` 为 `None` 就**真的是没解出来** —— 不拿最后一段散文顶上。
+    一个挂上去的假计划比没有计划更糟：它会让"有 plan_id"看起来像"有计划"。
+    """
+
+    __tablename__ = "plans"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    goal_id: Mapped[str] = mapped_column(String, nullable=False)
+
+    # 解出来的计划（JSON）。None = 没解出来。
+    plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 模型这一轮是怎么回的（json / text / none）。B 阶段靠这一栏才发现
+    # deepseek 根本不填 `tools`（§6.4.3），规划阶段同样要看这个。
+    plan_shape: Mapped[str] = mapped_column(String, nullable=False)
+    final_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # R1 的「完整 prompt」：实际发出去的全部 messages（含 system 与工具结果）。
+    transcript: Mapped[str] = mapped_column(Text, nullable=False)
+    # 规划时调了哪些工具、拿到了什么 —— 计划也是"基于什么做出来的"。
+    invocations: Mapped[str] = mapped_column(Text, nullable=False)
+    shapes: Mapped[str] = mapped_column(Text, nullable=False)
+    usage: Mapped[str | None] = mapped_column(Text, nullable=True)
+    errors: Mapped[str] = mapped_column(Text, nullable=False)
+
+    rounds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+Index("idx_plans_goal", PlanLog.goal_id, PlanLog.created_at.desc())
 

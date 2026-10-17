@@ -230,3 +230,22 @@ def test_an_incomplete_draft_is_not_told_to_confirm():
     等于替用户拍板，而 `activate()` 会拒掉，用户会以为是系统坏了。"""
     text = retell(_draft(symbols=["BTCUSDT"]), settings=_settings())
     assert "锁成 active" not in text
+
+
+def test_an_absolute_target_is_read_back_as_the_number_itself():
+    """ADR-040：用户说「做到 10175」，念回的就是 10175 —— 不换成百分比。"""
+    text = retell(
+        _full(target_return_pct=None, target_equity=10175.0),
+        settings=_settings(),
+    )
+    said = text.split("还没定下来的")[0]
+    assert "目标权益" in said
+    assert "10175" in said
+
+
+def test_both_targets_are_shown_when_both_were_said():
+    """两个口径不一致时把两个都念出来，别让用户在看不见的差异上点确认。"""
+    text = retell(_full(target_equity=1100.0), settings=_settings())
+    said = text.split("还没定下来的")[0]
+    assert "1100" in said
+    assert "+10%" in said

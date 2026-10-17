@@ -74,6 +74,10 @@ def retell(
 
     if draft.symbols:
         known.append(_line("标的范围", "、".join(draft.symbols)))
+    #: 用户说「做到 1100」时，念的就是这个数本身（ADR-040）。只念百分比会把
+    #: 他的目标换成一个他没同意过的换算值；两者都在时两个都念，让差异可见。
+    if draft.target_equity is not None:
+        known.append(_line("目标权益", f"做到 {draft.target_equity:g} USDT"))
     if draft.target_return_pct is not None:
         note = ""
         if extract is not None and "target_return_pct" in extract.derived:

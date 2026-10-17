@@ -71,6 +71,25 @@ def test_missing_lists_exactly_what_the_user_did_not_say():
     assert draft.missing() == ["标的范围", "收益目标", "回撤上限", "时间窗"]
 
 
+def test_an_absolute_target_counts_as_the_target_dimension():
+    """「做到 10175」是完整的收益目标（ADR-040）—— 不能再问他要一个百分比。
+
+    问第二遍的代价不只是烦：用户会以为刚才那句没被听见，然后自己编一个百分比，
+    而那个数从没在他的目标里出现过。
+    """
+    draft = _complete_draft()
+    draft.target_return_pct = None
+    draft.target_equity = 10175.0
+    assert draft.missing() == []
+
+
+def test_neither_target_form_still_asks_for_it():
+    draft = _complete_draft()
+    draft.target_return_pct = None
+    draft.target_equity = None
+    assert draft.missing() == ["收益目标"]
+
+
 def test_zero_is_a_stated_value_not_a_silence():
     """**「回撤上限 0」是句狠话，不是沉默。** 判空只能用 None/空串/空列表 ——
     拿真值判断会把 0 当成"没说"，然后回问用户一个他已经回答过的问题；

@@ -139,8 +139,21 @@ class GoalDraft:
     )
 
     def missing(self) -> list[str]:
-        """还没说的必要维度。**空了才允许激活。**"""
-        return [label for attr, label in REQUIRED_FIELDS if _blank(getattr(self, attr))]
+        """还没说的必要维度。**空了才允许激活。**
+
+        收益目标有**两种说法**：百分比，或一个绝对权益（ADR-040）。说了其中一个
+        就已经说了目标 —— 再问一遍会让用户觉得这东西没在听；而少了另一个不影响
+        执行，`target_equity` 优先。
+        """
+        out: list[str] = []
+        for attr, label in REQUIRED_FIELDS:
+            if attr == "target_return_pct":
+                if _blank(self.target_return_pct) and _blank(self.target_equity):
+                    out.append(label)
+                continue
+            if _blank(getattr(self, attr)):
+                out.append(label)
+        return out
 
     def revise(self, changes: dict[str, Any]) -> list[str]:
         """把这一轮用户提到的字段叠上去，**没提到的一个都不动**。

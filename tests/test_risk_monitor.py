@@ -7,12 +7,17 @@ import pytest
 from agent.config import Settings
 from agent.portfolio.valuation import Position
 from agent.risk.monitor import plan_closes
+from agent.risk.params import RiskParams
 
 
 def _s(**over):
     base = {"stop_loss_pct": 0.10, "max_drawdown_pct": 0.05, "trade_symbol": "BTCUSDT"}
     base.update(over)
     return Settings(**base)
+
+
+def _p(**over) -> RiskParams:
+    return RiskParams.from_settings(_s(**over))
 
 
 def _pos(asset: str, qty: float, price: float | None, value: float | None):
@@ -32,7 +37,7 @@ def test_drawdown_breach_clears_everything():
         ],
         highs={},
         drawdown_pct=0.06,
-        settings=_s(),
+        params=_p(),
     )
     assert result.should_close is True
     assert {i.asset for i in result.instructions} == {"BTC", "ETH"}  # 现金不"平"
@@ -46,7 +51,7 @@ def test_drawdown_breach_with_no_positions_is_not_an_instruction():
         positions=[_pos("USDT", 500.0, 1.0, 500.0)],
         highs={},
         drawdown_pct=0.9,
-        settings=_s(),
+        params=_p(),
     )
     assert result.should_close is False
     assert any("没有可平的持仓" in n for n in result.notes)
@@ -57,7 +62,7 @@ def test_drawdown_within_limit_closes_nothing():
         positions=[_pos("BTC", 0.001, 100000.0, 100.0)],
         highs={"BTC": 100000.0},
         drawdown_pct=0.01,
-        settings=_s(),
+        params=_p(),
     )
     assert result.should_close is False
 
@@ -68,7 +73,7 @@ def test_unknown_drawdown_is_noted_not_guessed():
         positions=[_pos("BTC", 0.001, 100000.0, 100.0)],
         highs={"BTC": 100000.0},
         drawdown_pct=None,
-        settings=_s(),
+        params=_p(),
     )
     assert result.should_close is False
     assert any("算不出权益回撤" in n for n in result.notes)
@@ -85,7 +90,7 @@ def test_stop_breach_closes_only_that_asset():
         ],
         highs={"BTC": 100000.0, "ETH": 3000.0},
         drawdown_pct=0.0,
-        settings=_s(),
+        params=_p(),
     )
     assert result.should_close is True
     assert len(result.instructions) == 1
@@ -102,7 +107,7 @@ def test_stop_breach_without_a_high_is_skipped_silently():
         positions=[_pos("BTC", 0.001, 50000.0, 50.0)],
         highs={},
         drawdown_pct=0.0,
-        settings=_s(),
+        params=_p(),
     )
     assert result.should_close is False
 
@@ -116,7 +121,7 @@ def test_drawdown_wins_over_stop_when_both_fire():
         ],
         highs={"BTC": 100000.0, "ETH": 3000.0},
         drawdown_pct=0.06,
-        settings=_s(),
+        params=_p(),
     )
     assert {i.asset for i in result.instructions} == {"BTC", "ETH"}
     assert all(i.rule == "drawdown" for i in result.instructions)
@@ -131,7 +136,7 @@ def test_zero_and_negative_quantities_are_never_closed():
         ],
         highs={"BTC": 100000.0, "ETH": 9000.0},
         drawdown_pct=0.0,
-        settings=_s(),
+        params=_p(),
     )
     assert result.should_close is False
 
@@ -141,7 +146,7 @@ def test_result_is_serialisable_for_the_event_log():
         positions=[_pos("BTC", 0.001, 50000.0, 50.0)],
         highs={"BTC": 100000.0},
         drawdown_pct=0.0,
-        settings=_s(),
+        params=_p(),
     )
     payload = result.as_dict()
     assert payload["instructions"][0]["rule"] == "stop_loss"

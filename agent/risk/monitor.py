@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from agent.config import Settings
 from agent.portfolio.valuation import CASH_ASSETS, Position
+from agent.risk.params import RiskParams
 from agent.risk.rules import StopBreach, drawdown_breached, stop_breaches
 
 
@@ -64,7 +64,7 @@ def plan_closes(
     highs: dict[str, float | None],
     drawdown_pct: float | None,
     *,
-    settings: Settings,
+    params: RiskParams,
     quote: str = "USDT",
 ) -> MonitorResult:
     """该平谁。
@@ -84,7 +84,7 @@ def plan_closes(
         # 数量为负不是"持仓"，是我们还不上的东西；不在这里处置
         return pos.quantity > 0
 
-    if drawdown_breached(drawdown_pct, settings.max_drawdown_pct):
+    if drawdown_breached(drawdown_pct, params.max_drawdown_pct):
         targets = [p for p in positions if _closeable(p)]
         if not targets:
             notes.append("回撤已破线，但账户里没有可平的持仓（已全是现金）")
@@ -98,7 +98,7 @@ def plan_closes(
                     rule="drawdown",
                     reason=(
                         f"权益回撤 {drawdown_pct:.2%} 已超上限 "
-                        f"{settings.max_drawdown_pct:.2%}，清空全部持仓"
+                        f"{params.max_drawdown_pct:.2%}，清空全部持仓"
                     ),
                 )
                 for p in targets
@@ -110,7 +110,7 @@ def plan_closes(
         notes.append("算不出权益回撤，无法判断是否需要清仓 —— 只能拦开仓，不能自己平仓")
 
     breaches: tuple[StopBreach, ...] = stop_breaches(
-        positions, highs, settings.stop_loss_pct
+        positions, highs, params.stop_loss_pct
     )
     if not breaches:
         return MonitorResult(notes=tuple(notes))
@@ -124,7 +124,7 @@ def plan_closes(
                 rule="stop_loss",
                 reason=(
                     f"{b.asset} 从观测高点 {b.high:.2f} 回落 {b.drop:.2%}，"
-                    f"超过止损线 {settings.stop_loss_pct:.2%}，平掉该标的"
+                    f"超过止损线 {params.stop_loss_pct:.2%}，平掉该标的"
                 ),
             )
             for b in breaches

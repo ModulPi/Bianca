@@ -4,16 +4,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from agent.config import Settings
 from agent.portfolio.attribution import split_symbol
 from agent.portfolio.valuation import CASH_ASSETS, Position
+from agent.risk.params import RiskParams
 
 
 @dataclass
 class RiskContext:
     signal: dict[str, Any]
     market_data: dict[str, Any]
-    settings: Settings
+    #: 这次裁决用哪套边界。目标在跑就是目标确认时那份（ADR-021），
+    #: 不是当前 `.env` —— 规则只管读，不问来路。
+    params: RiskParams
     # 今天的盈亏，**权益口径**（含持仓浮亏）。None 表示**算不出来** ——
     # 它不等于 0，也不等于"没亏"。见 `agent/portfolio/pnl.py`。
     daily_pnl: float | None = None
@@ -67,7 +69,7 @@ class MaxTradeAmountRule:
                 rule=self.name,
             )
 
-        max_usdt = ctx.settings.max_trade_amount
+        max_usdt = ctx.params.max_trade_amount
         notional = float(amount)
 
         if action == "SELL":
@@ -100,7 +102,7 @@ class DailyLossRule:
         if ctx.signal.get("action", "HOLD").upper() != "BUY":
             return None
 
-        limit = ctx.settings.daily_loss_limit
+        limit = ctx.params.daily_loss_limit
 
         if ctx.daily_pnl is None:
             # **算不出来就拦住**，而不是放行。把"不知道"当成 0 会让熔断静默失效 ——
@@ -172,14 +174,14 @@ class PositionLimitRule:
         # 与 value_quote 同为 USDT，可以直接相加。
         current = held.value_quote if held is not None else 0.0
         after = current + max(notional, 0.0)
-        cap = ctx.equity * ctx.settings.max_position_pct
+        cap = ctx.equity * ctx.params.max_position_pct
 
         if after > cap:
             return RiskVerdict(
                 approved=False,
                 reason=(
                     f"{base} 买后市值约 {after:.2f} USDT，超过权益 {ctx.equity:.2f} 的 "
-                    f"{ctx.settings.max_position_pct:.0%} 上限 {cap:.2f}"
+                    f"{ctx.params.max_position_pct:.0%} 上限 {cap:.2f}"
                 ),
                 rule=self.name,
             )
@@ -234,12 +236,12 @@ class TrailingStopRule:
             )
 
         drop = (high - held.price) / high
-        if drop >= ctx.settings.stop_loss_pct:
+        if drop >= ctx.params.stop_loss_pct:
             return RiskVerdict(
                 approved=False,
                 reason=(
                     f"{base} 已从近期高点 {high:.2f} 回落 {drop:.2%}"
-                    f"（止损线 {ctx.settings.stop_loss_pct:.2%}）"
+                    f"（止损线 {ctx.params.stop_loss_pct:.2%}）"
                 ),
                 rule=self.name,
             )
@@ -269,13 +271,13 @@ class DrawdownRule:
                 rule=self.name,
             )
 
-        if ctx.drawdown_pct >= ctx.settings.max_drawdown_pct:
+        if ctx.drawdown_pct >= ctx.params.max_drawdown_pct:
             peak = f"{ctx.peak_equity:.2f}" if ctx.peak_equity is not None else "未知"
             return RiskVerdict(
                 approved=False,
                 reason=(
                     f"权益已从峰值 {peak} 回撤 {ctx.drawdown_pct:.2%}"
-                    f"（上限 {ctx.settings.max_drawdown_pct:.2%}）"
+                    f"（上限 {ctx.params.max_drawdown_pct:.2%}）"
                 ),
                 rule=self.name,
             )

@@ -10,6 +10,7 @@ from agent.portfolio.klines import fetch_recent_highs
 from agent.portfolio.pnl import daily_pnl as compute_daily_pnl
 from agent.portfolio.pnl import drawdown as compute_drawdown
 from agent.portfolio.valuation import CASH_ASSETS, Position, positions_from_rows
+from agent.risk.params import RiskParams
 from agent.risk.rules import (
     DailyLossRule,
     DrawdownRule,
@@ -34,8 +35,12 @@ class RiskEngine:
         settings: Settings | None = None,
         rules: list[RiskRule] | None = None,
         highs_provider: HighsProvider | None = None,
+        params: RiskParams | None = None,
     ) -> None:
         self._settings = settings or get_settings()
+        # 有目标就传目标那份（ADR-021）；没传说明是旧的手动 tick，按配置来。
+        # **不要在这里偷偷回落到配置** —— 目标路径忘了传，就会静默换成另一套边界。
+        self._params = params or RiskParams.from_settings(self._settings)
         self._rules = rules or [
             MaxTradeAmountRule(),
             DailyLossRule(),
@@ -82,7 +87,7 @@ class RiskEngine:
         return RiskContext(
             signal=signal,
             market_data=market_data,
-            settings=self._settings,
+            params=self._params,
             daily_pnl=inputs.daily_pnl,
             equity=inputs.equity,
             positions=inputs.positions,

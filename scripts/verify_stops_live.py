@@ -37,6 +37,7 @@ from agent.portfolio.pnl import drawdown  # noqa: E402
 from agent.portfolio.valuation import CASH_ASSETS, Position  # noqa: E402
 from agent.risk.engine import PortfolioInputs, _latest_holdings, _stop_assets  # noqa: E402
 from agent.risk.monitor import plan_closes  # noqa: E402
+from agent.risk.params import RiskParams  # noqa: E402
 from agent.risk.rules import MaxTradeAmountRule, RiskContext  # noqa: E402
 from agent.storage import database  # noqa: E402
 from agent.storage.repository import EquityRepository  # noqa: E402
@@ -265,7 +266,9 @@ async def main() -> int:
 
     # ---------------------------------------------------------------- 巡检判定
     section("4. 巡检判定（每轮 tick 都跑，与 LLM 说什么无关）")
-    plan = plan_closes(positions, highs, dd.pct, settings=settings)
+    plan = plan_closes(
+        positions, highs, dd.pct, params=RiskParams.from_settings(settings)
+    )
     show("should_close", plan.should_close)
     if not plan.instructions:
         print("  （本轮没有该平的东西）")
@@ -296,7 +299,7 @@ async def main() -> int:
         ctx = RiskContext(
             signal=signal,
             market_data={"symbol": f"{btc.asset}USDT", "last": btc.price},
-            settings=settings,
+            params=RiskParams.from_settings(settings),
         )
         blocked = MaxTradeAmountRule().evaluate(ctx)
         show("常规风控裁决", "拦下" if blocked else "放行")
@@ -314,7 +317,9 @@ async def main() -> int:
         # 第二条断言**不能**看本轮实际破没破线：真实库这一刻通常没破，
         # 那样就成了"因为没破线所以豁免成立"，什么也没证明。
         # 这里强行喂一个 99% 的回撤，专看"明知超上限，计划里还有没有这笔"。
-        forced = plan_closes(positions, highs, 0.99, settings=settings)
+        forced = plan_closes(
+            positions, highs, 0.99, params=RiskParams.from_settings(settings)
+        )
         forced_btc = next((i for i in forced.instructions if i.asset == "BTC"), None)
         show("强行喂 99% 回撤后是否列进 BTC", forced_btc is not None)
         line(

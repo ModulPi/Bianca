@@ -8,6 +8,7 @@ from agent.config import Settings, get_settings
 from agent.graph.state import TradeState
 from agent.portfolio.valuation import positions_to_rows
 from agent.risk.engine import RiskEngine
+from agent.risk.params import RiskParams
 from agent.storage.repository import (
     RiskEventRepository,
     TradeRepository,
@@ -20,7 +21,12 @@ async def run_risk_agent(state: TradeState, *, settings: Settings | None = None)
     signal = state.get("llm_signal") or {}
     market_data = state.get("market_data") or {}
 
-    engine = RiskEngine(cfg)
+    # 目标在跑就用它确认时那份边界；没有才按当前配置（旧的手动 tick）。
+    # `from_snapshot` 缺列会抛 —— 那一轮宁可失败，也不拿 `.env` 替目标补规则。
+    raw_params = state.get("risk_params")
+    params = RiskParams.from_snapshot(raw_params) if raw_params else RiskParams.from_settings(cfg)
+
+    engine = RiskEngine(cfg, params=params)
     # 裁决**连同它的输入**取回来：那份 RiskContext 就是 R3 的答案（ADR-019）。
     # 记它，而不是事后再读一次库 —— 再读的可能已经不是裁决时那一份了。
     verdict, ctx = await engine.evaluate_detailed(signal, market_data)

@@ -3,6 +3,7 @@ import pytest
 from agent.config import Settings
 from agent.portfolio.pnl import DailyPnl
 from agent.risk.engine import RiskEngine
+from agent.risk.params import RiskParams
 from agent.risk.rules import (
     DrawdownRule,
     MaxTradeAmountRule,
@@ -38,12 +39,17 @@ def _settings(**overrides) -> Settings:
     return Settings(**base)
 
 
+def _params(**overrides) -> RiskParams:
+    """直接构造 `RiskContext` 时用的那套边界（与从 settings 构造等价）。"""
+    return RiskParams.from_settings(_settings(**overrides))
+
+
 def test_max_trade_amount_rejects_large_buy():
     rule = MaxTradeAmountRule()
     ctx = RiskContext(
         signal={"action": "BUY", "amount": 80.0},
         market_data={"last": 65000},
-        settings=_settings(),
+        params=_params(),
     )
     verdict = rule.evaluate(ctx)
     assert verdict is not None
@@ -56,7 +62,7 @@ def test_max_trade_amount_passes_small_buy():
     ctx = RiskContext(
         signal={"action": "BUY", "amount": 30.0},
         market_data={"last": 65000},
-        settings=_settings(),
+        params=_params(),
     )
     assert rule.evaluate(ctx) is None
 
@@ -247,11 +253,11 @@ def _pos(asset="BTC", qty=0.001, price=65000.0, value=65.0):
     return Position(asset=asset, quantity=qty, price=price, value_quote=value)
 
 
-def _ctx(action="BUY", amount=10.0, *, equity=1000.0, positions=(), settings=None):
+def _ctx(action="BUY", amount=10.0, *, equity=1000.0, positions=(), params=None):
     return RiskContext(
         signal={"action": action, "amount": amount, "symbol": "BTCUSDT"},
         market_data={"symbol": "BTCUSDT", "last": 65000.0},
-        settings=settings or _settings(max_position_pct=0.5, max_trade_amount=10_000.0),
+        params=params or _params(max_position_pct=0.5, max_trade_amount=10_000.0),
         equity=equity,
         positions=tuple(positions),
     )
@@ -392,12 +398,12 @@ async def test_engine_treats_a_corrupt_positions_blob_as_empty_not_fatal(db, cap
 # ---------------------------------------------------------------- 止损线（A-3）
 
 
-def _stop_ctx(*, price=65000.0, high=65000.0, action="BUY", positions=None, settings=None):
+def _stop_ctx(*, price=65000.0, high=65000.0, action="BUY", positions=None, params=None):
     return RiskContext(
         signal={"action": action, "amount": 0.0002, "symbol": "BTCUSDT"},
         # 故意放一个**与快照价不同**的 Demo 价，见 test_stop_ignores_the_demo_price
         market_data={"symbol": "BTCUSDT", "last": 1.0},
-        settings=settings or _settings(stop_loss_pct=0.10, max_trade_amount=10_000.0),
+        params=params or _params(stop_loss_pct=0.10, max_trade_amount=10_000.0),
         equity=1000.0,
         positions=tuple(
             [_pos(qty=0.001, price=price, value=0.001 * price)]
@@ -470,11 +476,11 @@ def test_stop_ignores_other_assets_holdings():
 # ---------------------------------------------------------------- 回撤（A-3）
 
 
-def _dd_ctx(*, pct=0.0, action="BUY", settings=None):
+def _dd_ctx(*, pct=0.0, action="BUY", params=None):
     return RiskContext(
         signal={"action": action, "amount": 0.0002, "symbol": "BTCUSDT"},
         market_data={"symbol": "BTCUSDT", "last": 65000.0},
-        settings=settings or _settings(max_drawdown_pct=0.05, max_trade_amount=10_000.0),
+        params=params or _params(max_drawdown_pct=0.05, max_trade_amount=10_000.0),
         equity=1000.0,
         drawdown_pct=pct,
         peak_equity=1000.0,

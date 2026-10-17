@@ -27,6 +27,7 @@ from enum import StrEnum
 from typing import Any, ClassVar
 
 from agent.config import Settings
+from agent.risk.params import RISK_PARAM_FIELDS
 
 #: ADR-018 把授权级别定死成全自动，所以它不参与"缺字段"的询问，只是留个位。
 AUTONOMY_FULL = "full"
@@ -190,15 +191,8 @@ class GoalDraft:
 #: 要固化的那几个。**只有风控参数**，`trade_symbol` / `market_interval` 这类配置
 #: 不在其中 —— 把它们一起冻住，会让"换个交易对要不要重新确认目标"变成一个
 #: 没有答案的问题，而那不是 ADR-021 要管的事。
-RISK_PARAM_FIELDS: tuple[str, ...] = (
-    "max_trade_amount",
-    "daily_loss_limit",
-    "stop_loss_pct",
-    "stop_lookback_hours",
-    "max_drawdown_pct",
-    "max_position_pct",
-    "force_close_enabled",
-)
+#: 列表本身在 `agent/risk/params.py`（见顶部 import）：执行期也从同一份构造
+#: `RiskParams`，两处各写一份迟早会漏掉一个新字段，而漏掉的那一侧永远不会报错。
 
 
 def effective_drawdown_limit(settings: Settings, stated: float | None) -> float:

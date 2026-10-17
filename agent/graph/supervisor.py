@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -15,6 +16,7 @@ from agent.graph.analysis_agent import apply_analysis_to_state, run_analysis_age
 from agent.graph.execute_agent import run_execute_agent
 from agent.graph.risk_agent import run_risk_agent
 from agent.graph.state import TradeState
+from agent.risk.params import RiskParams
 from agent.storage.repository import (
     EquityRepository,
     TradeRepository,
@@ -144,7 +146,13 @@ async def _capture_equity_snapshot() -> None:
         logger.warning("权益快照采集失败，风控将使用上一次的快照: %s", exc)
 
 
-async def _force_close_if_needed(settings: Settings) -> list[dict[str, Any]]:
+async def _force_close_if_needed(
+    settings: Settings,
+    *,
+    params: RiskParams | None = None,
+    goal_id: str | None = None,
+    plan_id: str | None = None,
+) -> list[dict[str, Any]]:
     """破线巡检 —— **每轮都跑，与 LLM 说了什么无关**（ADR-027）。
 
     这是本模块唯一会**自己发起交易**的地方。它必须在 LLM 之外：紧急出口如果依赖
@@ -154,12 +162,16 @@ async def _force_close_if_needed(settings: Settings) -> list[dict[str, Any]]:
     """
     from agent.risk.close import force_close
 
-    if not settings.force_close_enabled:
+    # 目标在跑时，这个开关也来自目标快照（ADR-021）—— 它同样是风控参数的一份。
+    enabled = params.force_close_enabled if params is not None else settings.force_close_enabled
+    if not enabled:
         logger.warning("force_close_enabled=false：即使破线也不会自动平仓，只剩拦开仓")
         return []
 
     try:
-        return await force_close(settings=settings)
+        return await force_close(
+            settings=settings, params=params, goal_id=goal_id, plan_id=plan_id
+        )
     except Exception as exc:  # noqa: BLE001 — 平仓这条路自己崩了，不能让整轮 tick 挂掉
         logger.error("强制平仓巡检失败: %s", exc, exc_info=True)
         return []
@@ -172,6 +184,7 @@ async def run_agent_tick(
     settings: Settings | None = None,
     goal_id: str | None = None,
     plan_id: str | None = None,
+    params: RiskParams | None = None,
 ) -> TradeState:
     """Run one full Supervisor → Analysis → Risk → Execute cycle.
 
@@ -191,7 +204,9 @@ async def run_agent_tick(
 
     # 破线巡检排在进图**之前**：先保护，再考虑开新仓。反过来的话，
     # 同一轮里可能刚建仓就被平掉（图里读的是同一张快照，会批准那笔买入）。
-    force_close_results = await _force_close_if_needed(cfg)
+    force_close_results = await _force_close_if_needed(
+        cfg, params=params, goal_id=goal_id, plan_id=plan_id
+    )
 
     checkpoint_path = cfg.data_dir / "checkpoints.sqlite"
 
@@ -199,6 +214,8 @@ async def run_agent_tick(
         "llm_auto_execute": cfg.llm_auto_execute,
         "goal_id": goal_id,
         "plan_id": plan_id,
+        # 目标路径把确认时那份边界带进图里；旧的手动 tick 不带，风险节点按配置来。
+        "risk_params": asdict(params) if params is not None else None,
     }
     if market_data:
         initial["market_data"] = market_data

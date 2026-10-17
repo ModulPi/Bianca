@@ -351,7 +351,9 @@ async def _settle(
     """
     if not trade_id:
         return
-    force = origin == "force_close"
+    # `force_close` 是旧值；ADR-035 起来源是 `risk_force_close`。两个都认，
+    # 因为库里已经有按旧值写下的行 —— 只认新值会把它们读成"风控通过"。
+    force = origin in {"force_close", "risk_force_close"}
     if order.status == UNKNOWN:
         risk_reason = "订单下落不明：提交后未能取得可信回执"
     elif force:

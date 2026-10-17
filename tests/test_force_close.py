@@ -14,6 +14,7 @@ import pytest
 from agent.config import Settings
 from agent.graph import execute_agent
 from agent.risk import close as close_module
+from agent.risk.params import RISK_PARAM_FIELDS, RiskParams
 from agent.storage import database
 from agent.storage.repository import (
     EquityRepository,
@@ -122,6 +123,13 @@ def _settings(**over):
     }
     base.update(over)
     return Settings(**base)
+
+
+def _params(**over) -> RiskParams:
+    """目标确认时固化的那份边界（ADR-021）。"""
+    values = {name: getattr(_settings(), name) for name in RISK_PARAM_FIELDS}
+    values.update(over)
+    return RiskParams.from_snapshot(values)
 
 
 @pytest.fixture(autouse=True)
@@ -238,7 +246,68 @@ async def test_force_close_switch_off_does_nothing(db, monkeypatch):
     assert fake.created == []
 
 
+@pytest.mark.asyncio
+async def test_the_patrol_uses_the_goal_snapshot_not_the_live_config(db, monkeypatch):
+    """**关键**（ADR-021）：持仓从高点跌了 50%，配置里的止损线 10% 会说"平"，
+    但目标确认时那份快照写的是 90% —— 那就**不许平**。
+
+    这条用例挡的是"改了 `.env` 就绕过了固化"：配置与快照在这里结论相反，
+    谁生效一眼就能看出来。
+    """
+    fake = FakeCCXT(_FILLED_SELL)
+    _install(monkeypatch, fake)
+    await _snapshot(positions=[_btc(price=50000.0)])
+
+    results = await close_module.force_close(
+        settings=_settings(stop_loss_pct=0.10),
+        params=_params(stop_loss_pct=0.90, max_drawdown_pct=0.90),
+    )
+
+    assert results == []
+    assert fake.created == []
+
+
+@pytest.mark.asyncio
+async def test_the_goal_snapshot_also_owns_the_force_close_switch(db, monkeypatch):
+    """`force_close_enabled` 是风控参数的一份，不是全局开关的家丁。"""
+    fake = FakeCCXT(_FILLED_SELL)
+    _install(monkeypatch, fake)
+    await _snapshot(positions=[_btc(price=50000.0)])
+
+    from agent.graph.supervisor import _force_close_if_needed
+
+    results = await _force_close_if_needed(
+        _settings(force_close_enabled=True),
+        params=_params(force_close_enabled=False),
+    )
+
+    assert results == []
+    assert fake.created == []
+
+
 # ---------------------------------------------------------------- 记录说真话
+
+
+@pytest.mark.asyncio
+async def test_the_force_close_claims_the_goal_it_was_protecting(db, monkeypatch):
+    """ADR-035：强平也要认领目标，并且来源说得清是风控而不是模型。"""
+    fake = FakeCCXT(_FILLED_SELL)
+    _install(monkeypatch, fake)
+    await _snapshot(positions=[_btc(price=50000.0)])
+
+    results = await close_module.force_close(
+        settings=_settings(), goal_id="g-1", plan_id="p-1"
+    )
+
+    row = await TradeRepository().get_by_id(results[0]["trade_log_id"])
+    assert (row.goal_id, row.plan_id) == ("g-1", "p-1")
+    # 来源变了，但裁决结论不能跟着变 —— 它仍然不是一次"风控通过"的普通交易。
+    assert row.risk_decision == "force_close"
+
+    events = await RiskEventRepository().list_recent(limit=5)
+    detail = json.loads(events[0].detail)
+    assert detail["origin"] == "risk_force_close"
+    assert (detail["goal_id"], detail["plan_id"]) == ("g-1", "p-1")
 
 
 @pytest.mark.asyncio

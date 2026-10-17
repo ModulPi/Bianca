@@ -339,7 +339,7 @@ async def test_goal_and_plan_survive_a_real_tick(db, monkeypatch, tmp_path):
     async def _snap():
         await _snapshot(equity=555.0)
 
-    async def _no_patrol(settings):
+    async def _no_patrol(settings, **_kwargs):
         return []
 
     monkeypatch.setattr(supervisor, "_capture_equity_snapshot", _snap)
